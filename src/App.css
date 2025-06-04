@@ -1,0 +1,182 @@
+/* Global Styles */
+body {
+  background-color: #F6F4E9;
+  font-family: Arial, sans-serif;
+  color: #333;
+  margin: 0;
+  padding: 0;
+}
+
+/* General Container */
+.App {
+  text-align: center;
+  padding: 20px;
+}
+
+h1 {
+  font-size: 35px;
+  color: #444;
+  margin-bottom: 20px;
+}
+
+.offers-section h2{
+  font-size: 28px;
+  margin-bottom: 30px;
+  margin-top: 30px;
+}
+
+/* Search Box and Filtered List */
+input[type="text"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+ul {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background-color: #fff;
+  position: absolute;
+  z-index: 1000;
+  width: 100%;
+}
+
+ul li {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  transition: background-color 0.2s ease;
+}
+
+ul li:hover {
+  background-color: #f0f0f0;
+}
+
+.offers-section {
+  padding: 20px;
+}
+
+.offer-group {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 40px;
+}
+
+.offer-group h2 {
+  flex: 0 0 200px; /* Fixed width for the heading */
+  text-align: left;
+  font-size: 24px;
+  margin: 0;
+  padding: 10px 0;
+}
+
+.offer-grid {
+  flex: 1; /* Let the grid take the remaining space */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 50px;
+  justify-content: flex-start; /* Align cards to the left */
+}
+
+.offer-card {
+  background-color: #d2e4c7;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-width: 300px;
+  flex: 1 1 1calc(35% - 20px); /* For 2 cards on desktop */
+  margin: 10px;
+  margin-left: 70px; /* Add spacing around each card */
+}
+
+
+.offer-card img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+}
+
+.offer-info {
+  padding: 15px;
+}
+
+.offer-info h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.offer-info p {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.offer-info button {
+  background-color: #4CAF50;
+  color: #fff;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.offer-info button:hover {
+  background-color: #0056b3;
+}
+
+@media (max-width: 768px) {
+  .dropdown {
+    max-width: 90%;
+  }
+  
+  .offer-group {
+    flex-direction: column; /* Stack heading and cards vertically on mobile */
+    align-items: center; /* Ensure alignment for the entire group */
+  }
+
+  .offer-grid {
+    justify-content: center; /* Center cards */
+    width: 100%; /* Allow grid to take full width */
+  }
+
+  .offer-card {
+    flex: none; /* Disable shrinking or growing */
+    width: 95%; /* Set a specific width for mobile */
+    display: flex;
+    flex-direction: column; /* Stack content vertically */
+    align-items: center; /* Center align card content */
+    text-align: center;
+    padding: 10px;
+    box-sizing: border-box; /* Ensure padding is included in width */
+    margin: 0;
+  }
+
+  .offer-card img {
+    width: 100%; /* Full width of the card */
+    height: auto; /* Maintain aspect ratio */
+    margin-bottom: 10px; /* Add space below the image */
+  }
+
+  .offer-info h3 {
+    font-size: 16px; /* Slightly smaller title size for mobile */
+    margin: 10px 0;
+  }
+
+  .offer-info p {
+    font-size: 14px; /* Adjust font size for better readability */
+    margin-bottom: 15px;
+  }
+
+  .offer-info button {
+    width: 100%; /* Make button full width */
+    font-size: 14px; /* Adjust font size for smaller screens */
+    padding: 10px; /* Ensure proper spacing */
+  }
+}
