@@ -131,6 +131,7 @@ const AirlineOffers = () => {
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
+      {/* Navbar - unchanged from original */}
       <nav style={styles.navbar}>
         <div style={styles.logoContainer}>
           <a href="https://www.myrupaya.in/">
@@ -146,11 +147,66 @@ const AirlineOffers = () => {
         </div>
       </nav>
 
-      <h1>Airline Offers</h1>
+      {/* Title in white container box */}
+      <div style={{
+        backgroundColor: 'white',
+        padding: '20px',
+        margin: '20px auto',
+        maxWidth: '1200px',
+        borderRadius: '5px',
+        boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+      }}>
+        <h1 style={{ color: 'black', textAlign: 'center', margin: 0 }}>Airline Offers</h1>
+      </div>
 
+      {/* 50-50 split row */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: '20px'
+      }}>
+        {/* First section with title and paragraph */}
+        <div style={{
+          flex: '1',
+          minWidth: '300px',
+          padding: '20px'
+        }}>
+          <h2 style={{ color: '#333' }}>Find the Best Airline Offers</h2>
+          <p style={{ lineHeight: '1.6', color: '#666' }}>
+            Discover exclusive discounts and cashback offers on flight bookings when you use your credit or debit card. 
+            Our platform aggregates the best airline offers from multiple travel portals to help you save money on your 
+            next trip. Simply search for your card to see available offers.
+          </p>
+        </div>
+        
+        {/* Second section with image */}
+        <div style={{
+          flex: '1',
+          minWidth: '300px',
+          padding: '20px',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <img 
+            src="" 
+            alt="Airline offers" 
+            style={{ 
+              maxWidth: '100%', 
+              height: 'auto',
+              borderRadius: '5px',
+              boxShadow: '0 3px 10px rgba(0,0,0,0.2)'
+            }} 
+          />
+        </div>
+      </div>
+
+      {/* Dropdown section - unchanged from original */}
       <div
         className="dropdown"
-        style={{ position: "relative", width: "600px", margin: "0 auto" }}
+        style={{ position: "relative", width: "600px", margin: "30px auto" }}
       >
         <input
           type="text"
@@ -220,8 +276,9 @@ const AirlineOffers = () => {
         </p>
       )}
 
+      {/* Offers section - unchanged from original */}
       {selectedCard && (
-        <div className="offers-section">
+        <div className="offers-section" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
           {selectedEaseOffers.length > 0 && (
             <div>
               <h2>Offers on EaseMyTrip</h2>
@@ -303,10 +360,81 @@ const AirlineOffers = () => {
           )}
         </div>
       )}
+
+      {/* FAQ section with 3 columns */}
+      <div style={{
+        maxWidth: '1200px',
+        margin: '50px auto',
+        padding: '20px'
+      }}>
+        <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Frequently Asked Questions</h2>
+        
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '20px',
+          justifyContent: 'space-between'
+        }}>
+          {/* Column 1 */}
+          <div style={{
+            flex: '1',
+            minWidth: '300px',
+            padding: '20px',
+            borderRadius: '5px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+          }}>
+            <h3 style={{ color: '#333', borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
+              How do I use these offers?
+            </h3>
+            <p style={{ lineHeight: '1.6', color: '#666' }}>
+              Simply search for your credit or debit card to see available offers. When you find an offer you want to use, 
+              click "View Details" to be redirected to the partner website. Make sure to use the same card during checkout 
+              to avail the discount.
+            </p>
+          </div>
+          
+          {/* Column 2 */}
+          <div style={{
+            flex: '1',
+            minWidth: '300px',
+            padding: '20px',
+            borderRadius: '5px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+          }}>
+            <h3 style={{ color: '#333', borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
+              Are these offers valid for international flights?
+            </h3>
+            <p style={{ lineHeight: '1.6', color: '#666' }}>
+              Most offers are valid for both domestic and international flights, but some may have restrictions. 
+              Please check the terms and conditions of each offer before booking. The offer details will specify 
+              if there are any limitations on flight routes.
+            </p>
+          </div>
+          
+          {/* Column 3 */}
+          <div style={{
+            flex: '1',
+            minWidth: '300px',
+            padding: '20px',
+            borderRadius: '5px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+          }}>
+            <h3 style={{ color: '#333', borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
+              How often are new offers added?
+            </h3>
+            <p style={{ lineHeight: '1.6', color: '#666' }}>
+              We update our database regularly as new offers become available. Most airline offers are seasonal, 
+              so we recommend checking back frequently, especially before planning your travel. Some offers may 
+              have limited validity periods.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
 
+// Styles unchanged from original
 const styles = {
   navbar: {
     display: "flex",
