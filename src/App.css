@@ -1,10 +1,14 @@
 /* Global Styles */
 body {
-  background-color: #f5f5f5;
   font-family: Arial, sans-serif;
   color: #333;
   margin: 0;
   padding: 0;
+}
+
+body {
+  @apply min-h-screen;
+  background: linear-gradient(to bottom, #999792, #cecdc9);
 }
 
 /* General Container */
@@ -86,7 +90,7 @@ ul li:hover {
 }
 
 .offer-card {
-  background-color: #d2e4c7;
+  background-color: #f5f5f5;
   border: 1px solid #ccc;
   border-radius: 8px;
   overflow: hidden;
@@ -119,7 +123,7 @@ ul li:hover {
 }
 
 .offer-info button {
-  background-color: #4CAF50;
+  background-color: #1e7145;
   color: #fff;
   padding: 10px 15px;
   border: none;
