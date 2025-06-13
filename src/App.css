@@ -8,7 +8,8 @@ body {
 
 body {
   @apply min-h-screen;
-  background: linear-gradient(to bottom, #999792, #cecdc9);
+  background: linear-gradient(135deg, #F8F9FA 3%, #E9ECEF 100%, #CECDC9 100%);
+
 }
 
 /* General Container */
