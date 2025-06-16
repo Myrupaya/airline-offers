@@ -14,16 +14,22 @@ const AirlineOffers = () => {
   const [ixigoOffers, setIxigoOffers] = useState([]);
   const [airlineOffers, setAirlineOffers] = useState([]);
   const [noOffersMessage, setNoOffersMessage] = useState(false);
+  const [makeMyTripOffers, setMakeMyTripOffers] = useState([]);
+const [clearTripOffers, setClearTripOffers] = useState([]);
+
 
   useEffect(() => {
     const fetchCSVData = async () => {
       try {
-        const files = [
-          { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
-          { name: "YATRA AIRLINE.csv", setter: setYatraOffers },
-          { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
-          { name: "Airline-offers.csv", setter: setAirlineOffers },
-        ];
+       const files = [
+  { name: "EASE MY TRIP.csv", setter: setEaseOffers },
+  { name: "YATRA AIRLINE.csv", setter: setYatraOffers },
+  { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
+  { name: "Airline-offers.csv", setter: setAirlineOffers },
+  { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
+  { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
+];
+
 
         let allCreditCards = new Set();
         let allDebitCards = new Set();
@@ -32,21 +38,25 @@ const AirlineOffers = () => {
           const response = await axios.get(`/${file.name}`);
           const parsedData = Papa.parse(response.data, { header: true });
 
-          if (file.name === "Airline-offers.csv") {
-            parsedData.data.forEach((row) => {
-              if (row["Applicable Debit Cards"]) {
-                row["Applicable Debit Cards"].split(",").forEach((card) => {
-                  allDebitCards.add(card.trim());
-                });
-              }
-            });
-          } else {
-            parsedData.data.forEach((row) => {
-              if (row["Credit Card"]) {
-                allCreditCards.add(row["Credit Card"].trim());
-              }
-            });
-          }
+         if (file.name === "Airline-offers.csv") {
+  // extract debit cards
+  parsedData.data.forEach((row) => {
+    if (row["Applicable Debit Cards"]) {
+      row["Applicable Debit Cards"].split(",").forEach((card) => {
+        allDebitCards.add(card.trim());
+      });
+    }
+  });
+} else {
+  parsedData.data.forEach((row) => {
+    if (row["Credit Card"]) {
+      row["Credit Card"].split(",").forEach((card) => {
+        allCreditCards.add(card.trim());
+      });
+    }
+  });
+}
+
 
           file.setter(parsedData.data);
         }
@@ -128,6 +138,9 @@ const AirlineOffers = () => {
   const selectedYatraOffers = getOffersForSelectedCard(yatraOffers);
   const selectedIxigoOffers = getOffersForSelectedCard(ixigoOffers);
   const selectedDebitAirlineOffers = getOffersForSelectedCard(airlineOffers, true);
+  const selectedMakeMyTripOffers = getOffersForSelectedCard(makeMyTripOffers);
+const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
+
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
@@ -269,6 +282,46 @@ const AirlineOffers = () => {
               </div>
             </div>
           )}
+          {selectedMakeMyTripOffers.length > 0 && (
+  <div>
+    <h2>Offers on MakeMyTrip</h2>
+    <div className="offer-grid">
+      {selectedMakeMyTripOffers.map((offer, index) => (
+        <div key={index} className="offer-card">
+          <img src={offer.Image} alt={offer.Title} />
+          <div className="offer-info">
+            <h3>{offer.Title}</h3>
+            <p>{offer.Offer}</p>
+            <button onClick={() => window.open(offer.Link, "_blank")}>
+              View Details
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+{selectedClearTripOffers.length > 0 && (
+  <div>
+    <h2>Offers on ClearTrip</h2>
+    <div className="offer-grid">
+      {selectedClearTripOffers.map((offer, index) => (
+        <div key={index} className="offer-card">
+          <img src={offer.Image} alt={offer.Title} />
+          <div className="offer-info">
+            <h3>{offer.Title}</h3>
+            <p>{offer.Offer}</p>
+            <button onClick={() => window.open(offer.Link, "_blank")}>
+              View Details
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
 
           {selectedDebitAirlineOffers.length > 0 && (
             <div>
