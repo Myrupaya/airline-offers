@@ -22,7 +22,7 @@ const [clearTripOffers, setClearTripOffers] = useState([]);
     const fetchCSVData = async () => {
       try {
        const files = [
-  { name: "EASE MY TRIP.csv", setter: setEaseOffers },
+  { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
   { name: "YATRA AIRLINE.csv", setter: setYatraOffers },
   { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
   { name: "Airline-offers.csv", setter: setAirlineOffers },
