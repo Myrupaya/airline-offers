@@ -15,21 +15,21 @@ const AirlineOffers = () => {
   const [airlineOffers, setAirlineOffers] = useState([]);
   const [noOffersMessage, setNoOffersMessage] = useState(false);
   const [makeMyTripOffers, setMakeMyTripOffers] = useState([]);
-const [clearTripOffers, setClearTripOffers] = useState([]);
-
+  const [clearTripOffers, setClearTripOffers] = useState([]);
+  const [permanentOffers, setPermanentOffers] = useState([]);
 
   useEffect(() => {
     const fetchCSVData = async () => {
       try {
-       const files = [
-  { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
-  { name: "YATRA AIRLINE.csv", setter: setYatraOffers },
-  { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
-  { name: "Airline-offers.csv", setter: setAirlineOffers },
-  { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
-  { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
-];
-
+        const files = [
+          { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
+          { name: "YATRA AIRLINE.csv", setter: setYatraOffers },
+          { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
+          { name: "Airline-offers.csv", setter: setAirlineOffers },
+          { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
+          { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
+          { name: "Updated_Permanent_Offers.csv", setter: setPermanentOffers },
+        ];
 
         let allCreditCards = new Set();
         let allDebitCards = new Set();
@@ -38,25 +38,31 @@ const [clearTripOffers, setClearTripOffers] = useState([]);
           const response = await axios.get(`/${file.name}`);
           const parsedData = Papa.parse(response.data, { header: true });
 
-         if (file.name === "Airline-offers.csv") {
-  // extract debit cards
-  parsedData.data.forEach((row) => {
-    if (row["Applicable Debit Cards"]) {
-      row["Applicable Debit Cards"].split(",").forEach((card) => {
-        allDebitCards.add(card.trim());
-      });
-    }
-  });
-} else {
-  parsedData.data.forEach((row) => {
-    if (row["Credit Card"]) {
-      row["Credit Card"].split(",").forEach((card) => {
-        allCreditCards.add(card.trim());
-      });
-    }
-  });
-}
-
+          if (file.name === "Airline-offers.csv") {
+            // extract debit cards
+            parsedData.data.forEach((row) => {
+              if (row["Applicable Debit Cards"]) {
+                row["Applicable Debit Cards"].split(",").forEach((card) => {
+                  allDebitCards.add(card.trim());
+                });
+              }
+            });
+          } else if (file.name === "Updated_Permanent_Offers.csv") {
+            // extract credit cards from permanent offers
+            parsedData.data.forEach((row) => {
+              if (row["Credit Card Name"]) {
+                allCreditCards.add(row["Credit Card Name"].trim());
+              }
+            });
+          } else {
+            parsedData.data.forEach((row) => {
+              if (row["Credit Card"]) {
+                row["Credit Card"].split(",").forEach((card) => {
+                  allCreditCards.add(card.trim());
+                });
+              }
+            });
+          }
 
           file.setter(parsedData.data);
         }
@@ -121,13 +127,15 @@ const [clearTripOffers, setClearTripOffers] = useState([]);
     setNoOffersMessage(false);
   };
 
-  const getOffersForSelectedCard = (offers, isDebit = false) => {
+  const getOffersForSelectedCard = (offers, isDebit = false, isPermanent = false) => {
     return offers.filter((offer) => {
       if (isDebit) {
         return (
           offer["Applicable Debit Cards"] &&
           offer["Applicable Debit Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
         );
+      } else if (isPermanent) {
+        return offer["Credit Card Name"] && offer["Credit Card Name"].trim() === selectedCard;
       } else {
         return offer["Credit Card"] && offer["Credit Card"].trim() === selectedCard;
       }
@@ -139,15 +147,11 @@ const [clearTripOffers, setClearTripOffers] = useState([]);
   const selectedIxigoOffers = getOffersForSelectedCard(ixigoOffers);
   const selectedDebitAirlineOffers = getOffersForSelectedCard(airlineOffers, true);
   const selectedMakeMyTripOffers = getOffersForSelectedCard(makeMyTripOffers);
-const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
-
+  const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
+  const selectedPermanentOffers = getOffersForSelectedCard(permanentOffers, false, true);
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
-
-
-
-      {/* Dropdown section - unchanged from original */}
       <div
         className="dropdown"
         style={{ position: "relative", width: "600px", margin: "30px auto" }}
@@ -220,9 +224,26 @@ const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
         </p>
       )}
 
-      {/* Offers section - unchanged from original */}
       {selectedCard && (
         <div className="offers-section" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+          {/* Permanent Offers Section */}
+          {selectedPermanentOffers.length > 0 && (
+            <div>
+              <h2>Permanent Offers</h2>
+              <div className="offer-grid">
+                {selectedPermanentOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    <img src={offer["Credit Card Image"]} alt={offer["Credit Card Name"]} />
+                    <div className="offer-info">
+                      <h3>{offer["Credit Card Name"]}</h3>
+                      <p>{offer["Flight Benefit"]}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {selectedEaseOffers.length > 0 && (
             <div>
               <h2>Offers on EaseMyTrip</h2>
@@ -282,46 +303,46 @@ const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
               </div>
             </div>
           )}
+
           {selectedMakeMyTripOffers.length > 0 && (
-  <div>
-    <h2>Offers on MakeMyTrip</h2>
-    <div className="offer-grid">
-      {selectedMakeMyTripOffers.map((offer, index) => (
-        <div key={index} className="offer-card">
-          <img src={offer.Image} alt={offer.Title} />
-          <div className="offer-info">
-            <h3>{offer.Title}</h3>
-            <p>{offer.Offer}</p>
-            <button onClick={() => window.open(offer.Link, "_blank")}>
-              View Details
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+            <div>
+              <h2>Offers on MakeMyTrip</h2>
+              <div className="offer-grid">
+                {selectedMakeMyTripOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    <img src={offer.Image} alt={offer.Title} />
+                    <div className="offer-info">
+                      <h3>{offer.Title}</h3>
+                      <p>{offer.Offer}</p>
+                      <button onClick={() => window.open(offer.Link, "_blank")}>
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-{selectedClearTripOffers.length > 0 && (
-  <div>
-    <h2>Offers on ClearTrip</h2>
-    <div className="offer-grid">
-      {selectedClearTripOffers.map((offer, index) => (
-        <div key={index} className="offer-card">
-          <img src={offer.Image} alt={offer.Title} />
-          <div className="offer-info">
-            <h3>{offer.Title}</h3>
-            <p>{offer.Offer}</p>
-            <button onClick={() => window.open(offer.Link, "_blank")}>
-              View Details
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-
+          {selectedClearTripOffers.length > 0 && (
+            <div>
+              <h2>Offers on ClearTrip</h2>
+              <div className="offer-grid">
+                {selectedClearTripOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    <img src={offer.Image} alt={offer.Title} />
+                    <div className="offer-info">
+                      <h3>{offer.Title}</h3>
+                      <p>{offer.Offer}</p>
+                      <button onClick={() => window.open(offer.Link, "_blank")}>
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {selectedDebitAirlineOffers.length > 0 && (
             <div>
@@ -344,43 +365,8 @@ const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
           )}
         </div>
       )}
-
-
     </div>
   );
-};
-
-// Styles unchanged from original
-const styles = {
-  navbar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "10px 20px",
-    backgroundColor: "#CDD1C1",
-  },
-  logoContainer: {
-    display: "flex",
-    alignItems: "center",
-  },
-  logo: {
-    width: "100px",
-    height: "100px",
-    marginRight: "20px",
-  },
-  linksContainer: {
-    display: "flex",
-    gap: "35px",
-    flexWrap: "wrap",
-    marginLeft: "40px",
-  },
-  link: {
-    textDecoration: "none",
-    color: "black",
-    fontSize: "18px",
-    fontFamily: "Arial, sans-serif",
-    transition: "color 0.3s ease",
-  },
 };
 
 export default AirlineOffers;
