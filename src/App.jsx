@@ -108,11 +108,13 @@ const AirlineOffers = () => {
 
       setFilteredCards(combinedResults);
 
-      if (filteredCredit.length === 0 && filteredDebit.length === 0) {
-        setNoOffersMessage(true);
-      } else {
-        setNoOffersMessage(false);
-      }
+    if (filteredCredit.length === 0 && filteredDebit.length === 0) {
+  setNoOffersMessage(true);
+  setSelectedCard(""); // ✅ Clear previous offers
+} else {
+  setNoOffersMessage(false);
+}
+
     } else {
       setFilteredCards([]);
       setNoOffersMessage(false);
@@ -149,6 +151,26 @@ const AirlineOffers = () => {
   const selectedMakeMyTripOffers = getOffersForSelectedCard(makeMyTripOffers);
   const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
   const selectedPermanentOffers = getOffersForSelectedCard(permanentOffers, false, true);
+
+  // Calculate if we should show scroll button
+  const hasAnyOffers = 
+    selectedPermanentOffers.length > 0 ||
+    selectedEaseOffers.length > 0 ||
+    selectedYatraOffers.length > 0 ||
+    selectedIxigoOffers.length > 0 ||
+    selectedDebitAirlineOffers.length > 0 ||
+    selectedMakeMyTripOffers.length > 0 ||
+    selectedClearTripOffers.length > 0;
+  
+  const showScrollButton = hasAnyOffers;
+
+  // Scroll down handler
+  const handleScrollDown = () => {
+    window.scrollBy({
+      top: window.innerHeight,
+      behavior: "smooth"
+    });
+  };
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
@@ -364,6 +386,29 @@ const AirlineOffers = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Scroll Down Button */}
+      {showScrollButton && (
+        <button 
+          onClick={handleScrollDown}
+          style={{
+            position: 'fixed',
+            right: '20px',
+            bottom: '150px',
+            padding: '10px 15px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontSize: '16px',
+            zIndex: 1000,
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+          }}
+        >
+          Scroll Down
+        </button>
       )}
     </div>
   );
