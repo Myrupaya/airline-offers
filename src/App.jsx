@@ -114,7 +114,6 @@ const AirlineOffers = () => {
 } else {
   setNoOffersMessage(false);
 }
-
     } else {
       setFilteredCards([]);
       setNoOffersMessage(false);
