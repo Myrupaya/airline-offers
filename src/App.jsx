@@ -10,24 +10,29 @@ const AirlineOffers = () => {
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState("");
   const [easeOffers, setEaseOffers] = useState([]);
-  const [yatraOffers, setYatraOffers] = useState([]);
+  const [yatraDomesticOffers, setYatraDomesticOffers] = useState([]);
+  const [yatraInternationalOffers, setYatraInternationalOffers] = useState([]);
   const [ixigoOffers, setIxigoOffers] = useState([]);
   const [airlineOffers, setAirlineOffers] = useState([]);
   const [noOffersMessage, setNoOffersMessage] = useState(false);
   const [makeMyTripOffers, setMakeMyTripOffers] = useState([]);
   const [clearTripOffers, setClearTripOffers] = useState([]);
+  const [goibiboOffers, setGoibiboOffers] = useState([]);
   const [permanentOffers, setPermanentOffers] = useState([]);
+  const [isDebitCardSelected, setIsDebitCardSelected] = useState(false);
 
   useEffect(() => {
     const fetchCSVData = async () => {
       try {
         const files = [
           { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
-          { name: "YATRA AIRLINE.csv", setter: setYatraOffers },
+          { name: "YATRA AIRLINE DOMESTIC.csv", setter: setYatraDomesticOffers },
+          { name: "YATRA AIRLINE INTERNATIONAL.csv", setter: setYatraInternationalOffers },
           { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
           { name: "Airline-offers.csv", setter: setAirlineOffers },
           { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
           { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
+          { name: "GOIBIBO AIRLINE.csv", setter: setGoibiboOffers },
           { name: "Updated_Permanent_Offers.csv", setter: setPermanentOffers },
         ];
 
@@ -55,9 +60,10 @@ const AirlineOffers = () => {
               }
             });
           } else {
+            // extract credit cards from all other files
             parsedData.data.forEach((row) => {
-              if (row["Credit Card"]) {
-                row["Credit Card"].split(",").forEach((card) => {
+              if (row["Eligible Cards"]) {
+                row["Eligible Cards"].split(",").forEach((card) => {
                   allCreditCards.add(card.trim());
                 });
               }
@@ -108,12 +114,12 @@ const AirlineOffers = () => {
 
       setFilteredCards(combinedResults);
 
-    if (filteredCredit.length === 0 && filteredDebit.length === 0) {
-  setNoOffersMessage(true);
-  setSelectedCard(""); // ✅ Clear previous offers
-} else {
-  setNoOffersMessage(false);
-}
+      if (filteredCredit.length === 0 && filteredDebit.length === 0) {
+        setNoOffersMessage(true);
+        setSelectedCard("");
+      } else {
+        setNoOffersMessage(false);
+      }
     } else {
       setFilteredCards([]);
       setNoOffersMessage(false);
@@ -121,11 +127,12 @@ const AirlineOffers = () => {
     }
   };
 
-  const handleCardSelection = (card) => {
+  const handleCardSelection = (card, type) => {
     setSelectedCard(card);
     setQuery(card);
     setFilteredCards([]);
     setNoOffersMessage(false);
+    setIsDebitCardSelected(type === "debit");
   };
 
   const getOffersForSelectedCard = (offers, isDebit = false, isPermanent = false) => {
@@ -136,30 +143,40 @@ const AirlineOffers = () => {
           offer["Applicable Debit Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
         );
       } else if (isPermanent) {
-        return offer["Credit Card Name"] && offer["Credit Card Name"].trim() === selectedCard;
+        return (
+          offer["Credit Card Name"] &&
+          offer["Credit Card Name"].trim() === selectedCard
+        );
       } else {
-        return offer["Credit Card"] && offer["Credit Card"].trim() === selectedCard;
+        return (
+          offer["Eligible Cards"] &&
+          offer["Eligible Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
+        );
       }
     });
   };
 
   const selectedEaseOffers = getOffersForSelectedCard(easeOffers);
-  const selectedYatraOffers = getOffersForSelectedCard(yatraOffers);
+  const selectedYatraDomesticOffers = getOffersForSelectedCard(yatraDomesticOffers);
+  const selectedYatraInternationalOffers = getOffersForSelectedCard(yatraInternationalOffers);
   const selectedIxigoOffers = getOffersForSelectedCard(ixigoOffers);
   const selectedDebitAirlineOffers = getOffersForSelectedCard(airlineOffers, true);
   const selectedMakeMyTripOffers = getOffersForSelectedCard(makeMyTripOffers);
   const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
+  const selectedGoibiboOffers = getOffersForSelectedCard(goibiboOffers);
   const selectedPermanentOffers = getOffersForSelectedCard(permanentOffers, false, true);
 
   // Calculate if we should show scroll button
   const hasAnyOffers = 
-    selectedPermanentOffers.length > 0 ||
     selectedEaseOffers.length > 0 ||
-    selectedYatraOffers.length > 0 ||
+    selectedYatraDomesticOffers.length > 0 ||
+    selectedYatraInternationalOffers.length > 0 ||
     selectedIxigoOffers.length > 0 ||
     selectedDebitAirlineOffers.length > 0 ||
     selectedMakeMyTripOffers.length > 0 ||
-    selectedClearTripOffers.length > 0;
+    selectedClearTripOffers.length > 0 ||
+    selectedGoibiboOffers.length > 0 ||
+    selectedPermanentOffers.length > 0;
   
   const showScrollButton = hasAnyOffers;
 
@@ -215,7 +232,7 @@ const AirlineOffers = () => {
               ) : (
                 <li
                   key={index}
-                  onClick={() => handleCardSelection(item.card)}
+                  onClick={() => handleCardSelection(item.card, item.type)}
                   style={{
                     padding: "10px",
                     cursor: "pointer",
@@ -247,8 +264,31 @@ const AirlineOffers = () => {
 
       {selectedCard && (
         <div className="offers-section" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+          {/* Debit Card Offers Section - Show first if debit card selected */}
+          {isDebitCardSelected && selectedDebitAirlineOffers.length > 0 && (
+            <div>
+              <h2>Debit Card Offers</h2>
+              <div className="offer-grid">
+                {selectedDebitAirlineOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Website} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"] || offer.Website}</h3>
+                      {offer.Validity && <p>Validity: {offer.Validity}</p>}
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Permanent Offers Section */}
-          {selectedPermanentOffers.length > 0 && (
+          {!isDebitCardSelected && selectedPermanentOffers.length > 0 && (
             <div>
               <h2>Permanent Offers</h2>
               <div className="offer-grid">
@@ -256,8 +296,7 @@ const AirlineOffers = () => {
                   <div key={index} className="offer-card">
                     <img src={offer["Credit Card Image"]} alt={offer["Credit Card Name"]} />
                     <div className="offer-info">
-                      <h3>{offer["Credit Card Name"]}</h3>
-                      <p>{offer["Flight Benefit"]}</p>
+                      <h3>{offer["Flight Benefit"]}</h3>
                     </div>
                   </div>
                 ))}
@@ -265,19 +304,43 @@ const AirlineOffers = () => {
             </div>
           )}
 
-          {selectedEaseOffers.length > 0 && (
+          {/* Goibibo Offers Section */}
+          {!isDebitCardSelected && selectedGoibiboOffers.length > 0 && (
+            <div>
+              <h2>Offers on Goibibo</h2>
+              <div className="offer-grid">
+                {selectedGoibiboOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* EaseMyTrip Offers Section */}
+          {!isDebitCardSelected && selectedEaseOffers.length > 0 && (
             <div>
               <h2>Offers on EaseMyTrip</h2>
               <div className="offer-grid">
                 {selectedEaseOffers.map((offer, index) => (
                   <div key={index} className="offer-card">
-                    <img src={offer.Image} alt={offer.Title} />
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
                     <div className="offer-info">
-                      <h3>{offer.Title}</h3>
-                      <p>{offer.Offer}</p>
-                      <button onClick={() => window.open(offer.Link, "_blank")}>
-                        View Details
-                      </button>
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -285,19 +348,21 @@ const AirlineOffers = () => {
             </div>
           )}
 
-          {selectedYatraOffers.length > 0 && (
+          {/* Yatra Domestic Offers Section */}
+          {!isDebitCardSelected && selectedYatraDomesticOffers.length > 0 && (
             <div>
-              <h2>Offers on Yatra</h2>
+              <h2>Offers on Yatra (Domestic)</h2>
               <div className="offer-grid">
-                {selectedYatraOffers.map((offer, index) => (
+                {selectedYatraDomesticOffers.map((offer, index) => (
                   <div key={index} className="offer-card">
-                    <img src={offer.Image} alt={offer.Title} />
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
                     <div className="offer-info">
-                      <h3>{offer.Title}</h3>
-                      <p>{offer.Offer}</p>
-                      <button onClick={() => window.open(offer.Link, "_blank")}>
-                        View Details
-                      </button>
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -305,19 +370,43 @@ const AirlineOffers = () => {
             </div>
           )}
 
-          {selectedIxigoOffers.length > 0 && (
+          {/* Yatra International Offers Section */}
+          {!isDebitCardSelected && selectedYatraInternationalOffers.length > 0 && (
+            <div>
+              <h2>Offers on Yatra (International)</h2>
+              <div className="offer-grid">
+                {selectedYatraInternationalOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ixigo Offers Section */}
+          {!isDebitCardSelected && selectedIxigoOffers.length > 0 && (
             <div>
               <h2>Offers on Ixigo</h2>
               <div className="offer-grid">
                 {selectedIxigoOffers.map((offer, index) => (
                   <div key={index} className="offer-card">
-                    <img src={offer.Image} alt={offer.Title} />
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
                     <div className="offer-info">
-                      <h3>{offer.Title}</h3>
-                      <p>{offer.Offer}</p>
-                      <button onClick={() => window.open(offer.Link, "_blank")}>
-                        View Details
-                      </button>
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -325,19 +414,21 @@ const AirlineOffers = () => {
             </div>
           )}
 
-          {selectedMakeMyTripOffers.length > 0 && (
+          {/* MakeMyTrip Offers Section */}
+          {!isDebitCardSelected && selectedMakeMyTripOffers.length > 0 && (
             <div>
               <h2>Offers on MakeMyTrip</h2>
               <div className="offer-grid">
                 {selectedMakeMyTripOffers.map((offer, index) => (
                   <div key={index} className="offer-card">
-                    <img src={offer.Image} alt={offer.Title} />
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
                     <div className="offer-info">
-                      <h3>{offer.Title}</h3>
-                      <p>{offer.Offer}</p>
-                      <button onClick={() => window.open(offer.Link, "_blank")}>
-                        View Details
-                      </button>
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -345,39 +436,21 @@ const AirlineOffers = () => {
             </div>
           )}
 
-          {selectedClearTripOffers.length > 0 && (
+          {/* ClearTrip Offers Section */}
+          {!isDebitCardSelected && selectedClearTripOffers.length > 0 && (
             <div>
               <h2>Offers on ClearTrip</h2>
               <div className="offer-grid">
                 {selectedClearTripOffers.map((offer, index) => (
                   <div key={index} className="offer-card">
-                    <img src={offer.Image} alt={offer.Title} />
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
                     <div className="offer-info">
-                      <h3>{offer.Title}</h3>
-                      <p>{offer.Offer}</p>
-                      <button onClick={() => window.open(offer.Link, "_blank")}>
-                        View Details
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {selectedDebitAirlineOffers.length > 0 && (
-            <div>
-              <h2>Airline Debit Card Offers</h2>
-              <div className="offer-grid">
-                {selectedDebitAirlineOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    <img src={offer.Image} alt={offer.Website} />
-                    <div className="offer-info">
-                      <h3>{offer.Website}</h3>
-                      <p>{offer.Offer}</p>
-                      <button onClick={() => window.open(offer.Link, "_blank")}>
-                        View Details
-                      </button>
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
