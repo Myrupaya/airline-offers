@@ -192,7 +192,7 @@ const AirlineOffers = () => {
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
       <div
         className="dropdown"
-        style={{ position: "relative", width: "600px", margin: "5px auto" }}
+        style={{ position: "relative", width: "600px", margin: "2px auto" }}
       >
         <input
           type="text"
