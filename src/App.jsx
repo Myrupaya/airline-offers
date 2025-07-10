@@ -192,13 +192,13 @@ const AirlineOffers = () => {
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
       <div
         className="dropdown"
-        style={{ position: "relative", width: "600px", margin: "30px auto" }}
+        style={{ position: "relative", width: "600px", margin: "5px auto" }}
       >
         <input
           type="text"
           value={query}
           onChange={handleInputChange}
-          placeholder="Type a Credit/Debit Card..."
+          placeholder="Type a Credit Card..."
           style={{
             width: "100%",
             padding: "12px",
