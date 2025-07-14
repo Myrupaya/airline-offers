@@ -1,114 +1,77 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import Papa from "papaparse";
 import "./App.css";
 
-const CreditCardDropdown = () => {
+const AirlineOffers = () => {
   const [creditCards, setCreditCards] = useState([]);
   const [debitCards, setDebitCards] = useState([]);
   const [filteredCards, setFilteredCards] = useState([]);
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState("");
-  const [pvrOffers, setPvrOffers] = useState([]);
-  const [inoxOffers, setInoxOffers] = useState([]);
-  const [bookMyShowOffers, setBookMyShowOffers] = useState([]);
-  const [movieDebitOffers, setMovieDebitOffers] = useState([]);
-  const [movieBenefits, setMovieBenefits] = useState([]);
-  const [expandedOfferIndex, setExpandedOfferIndex] = useState({ 
-    pvr: null, 
-    inox: null, 
-    bms: null 
-  });
-  const [showNoCardMessage, setShowNoCardMessage] = useState(false);
-  const [typingTimeout, setTypingTimeout] = useState(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const nearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 100;
-      setShowScrollButton(!nearBottom);
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    handleScroll(); // Check initial position
-    
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const handleScrollDown = () => {
-    window.scrollBy({
-      top: window.innerHeight * 0.8,
-      behavior: 'smooth'
-    });
-  };
-
-  const toggleOfferDetails = (type, index) => {
-    setExpandedOfferIndex(prev => ({
-      ...prev,
-      [type]: prev[type] === index ? null : index
-    }));
-  };
+  const [easeOffers, setEaseOffers] = useState([]);
+  const [yatraDomesticOffers, setYatraDomesticOffers] = useState([]);
+  const [yatraInternationalOffers, setYatraInternationalOffers] = useState([]);
+  const [ixigoOffers, setIxigoOffers] = useState([]);
+  const [airlineOffers, setAirlineOffers] = useState([]);
+  const [noOffersMessage, setNoOffersMessage] = useState(false);
+  const [makeMyTripOffers, setMakeMyTripOffers] = useState([]);
+  const [clearTripOffers, setClearTripOffers] = useState([]);
+  const [goibiboOffers, setGoibiboOffers] = useState([]);
+  const [permanentOffers, setPermanentOffers] = useState([]);
+  const [isDebitCardSelected, setIsDebitCardSelected] = useState(false);
 
   useEffect(() => {
     const fetchCSVData = async () => {
       try {
-        const [pvrResponse, inoxResponse, bmsResponse, debitResponse, benefitsResponse] = await Promise.all([
-          axios.get("/Pvr final.csv"),
-          axios.get("/Inox final.csv"),
-          axios.get("/Book My Show final.csv"),
-          axios.get("/Final_Cleaned_Movie_Offers.csv"),
-          axios.get("/Final_Movie_Benefits_List_With_Images.csv")
-        ]);
+        const files = [
+          { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
+          { name: "YATRA AIRLINE DOMESTIC.csv", setter: setYatraDomesticOffers },
+          { name: "YATRA AIRLINE INTERNATIONAL.csv", setter: setYatraInternationalOffers },
+          { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
+          { name: "Airline-offers.csv", setter: setAirlineOffers },
+          { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
+          { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
+          { name: "GOIBIBO AIRLINE.csv", setter: setGoibiboOffers },
+          { name: "Updated_Permanent_Offers.csv", setter: setPermanentOffers },
+        ];
 
-        const pvrData = Papa.parse(pvrResponse.data, { header: true });
-        const inoxData = Papa.parse(inoxResponse.data, { header: true });
-        const bmsData = Papa.parse(bmsResponse.data, { header: true });
-        const debitData = Papa.parse(debitResponse.data, { header: true });
-        const benefitsData = Papa.parse(benefitsResponse.data, { header: true });
+        let allCreditCards = new Set();
+        let allDebitCards = new Set();
 
-        setPvrOffers(pvrData.data);
-        setInoxOffers(inoxData.data);
-        setBookMyShowOffers(bmsData.data);
-        setMovieDebitOffers(debitData.data);
-        setMovieBenefits(benefitsData.data);
+        for (let file of files) {
+          const response = await axios.get(`/${file.name}`);
+          const parsedData = Papa.parse(response.data, { header: true });
 
-        const benefitsCreditCards = new Set();
-        benefitsData.data.forEach(row => {
-          if (row["Credit Card Name"]) {
-            benefitsCreditCards.add(row["Credit Card Name"].trim());
-          }
-        });
-
-        const otherCreditCards = new Set();
-        
-        pvrData.data.forEach(row => {
-          if (row["Credit Card"]) {
-            otherCreditCards.add(row["Credit Card"].trim());
-          }
-        });
-        
-        inoxData.data.forEach(row => {
-          if (row["Credit Card"]) {
-            otherCreditCards.add(row["Credit Card"].trim());
-          }
-        });
-        
-        bmsData.data.forEach(row => {
-          if (row["Credit Card"]) {
-            otherCreditCards.add(row["Credit Card"].trim());
-          }
-        });
-
-        const allCreditCards = new Set([...benefitsCreditCards, ...otherCreditCards]);
-
-        const allDebitCards = new Set();
-        debitData.data.forEach(row => {
-          if (row["Applicable Debit Cards"]) {
-            row["Applicable Debit Cards"].split(",").forEach(card => {
-              allDebitCards.add(card.trim());
+          if (file.name === "Airline-offers.csv") {
+            // extract debit cards
+            parsedData.data.forEach((row) => {
+              if (row["Applicable Debit Cards"]) {
+                row["Applicable Debit Cards"].split(",").forEach((card) => {
+                  allDebitCards.add(card.trim());
+                });
+              }
+            });
+          } else if (file.name === "Updated_Permanent_Offers.csv") {
+            // extract credit cards from permanent offers
+            parsedData.data.forEach((row) => {
+              if (row["Credit Card Name"]) {
+                allCreditCards.add(row["Credit Card Name"].trim());
+              }
+            });
+          } else {
+            // extract credit cards from all other files
+            parsedData.data.forEach((row) => {
+              if (row["Eligible Cards"]) {
+                row["Eligible Cards"].split(",").forEach((card) => {
+                  allCreditCards.add(card.trim());
+                });
+              }
             });
           }
-        });
+
+          file.setter(parsedData.data);
+        }
 
         setCreditCards(Array.from(allCreditCards).sort());
         setDebitCards(Array.from(allDebitCards).sort());
@@ -123,462 +86,379 @@ const CreditCardDropdown = () => {
   const handleInputChange = (event) => {
     const value = event.target.value;
     setQuery(value);
-    setShowNoCardMessage(false);
 
-    if (typingTimeout) {
-      clearTimeout(typingTimeout);
-    }
+    if (value) {
+      // Split search terms and match all terms (substring matching)
+      const searchTerms = value.toLowerCase().split(/\s+/);
+      
+      const filteredCredit = creditCards.filter((card) => {
+        const cardLower = card.toLowerCase();
+        return searchTerms.every(term => cardLower.includes(term));
+      });
+      
+      const filteredDebit = debitCards.filter((card) => {
+        const cardLower = card.toLowerCase();
+        return searchTerms.every(term => cardLower.includes(term));
+      });
 
-    if (!value) {
-      setSelectedCard("");
+      // Combine filtered credit and debit cards with headings
+      const combinedResults = [];
+      if (filteredCredit.length > 0) {
+        combinedResults.push({ type: "heading", label: "Credit Cards" });
+        combinedResults.push(...filteredCredit.map((card) => ({ type: "credit", card })));
+      }
+      if (filteredDebit.length > 0) {
+        combinedResults.push({ type: "heading", label: "Debit Cards" });
+        combinedResults.push(...filteredDebit.map((card) => ({ type: "debit", card })));
+      }
+
+      setFilteredCards(combinedResults);
+
+      if (filteredCredit.length === 0 && filteredDebit.length === 0) {
+        setNoOffersMessage(true);
+        setSelectedCard("");
+      } else {
+        setNoOffersMessage(false);
+      }
+    } else {
       setFilteredCards([]);
-      return;
-    }
-
-    const queryWords = value.toLowerCase().split(/\s+/).filter(word => word.length > 0);
-    
-    const filteredCredit = creditCards.filter((card) => {
-      const cardLower = card.toLowerCase();
-      return queryWords.every(word => cardLower.includes(word));
-    });
-    
-    const filteredDebit = debitCards.filter((card) => {
-      const cardLower = card.toLowerCase();
-      return queryWords.every(word => cardLower.includes(word));
-    });
-
-    const combinedResults = [];
-    if (filteredCredit.length > 0) {
-      combinedResults.push({ type: "heading", label: "Credit Cards" });
-      combinedResults.push(...filteredCredit.map((card) => ({ type: "credit", card })));
-    }
-    if (filteredDebit.length > 0) {
-      combinedResults.push({ type: "heading", label: "Debit Cards" });
-      combinedResults.push(...filteredDebit.map((card) => ({ type: "debit", card })));
-    }
-
-    setFilteredCards(combinedResults);
-
-    if (combinedResults.length === 0 && value.length > 2) {
-      const timeout = setTimeout(() => {
-        setShowNoCardMessage(true);
-      }, 1000);
-      setTypingTimeout(timeout);
+      setNoOffersMessage(false);
+      setSelectedCard("");
     }
   };
 
-  const handleCardSelection = (card) => {
+  const handleCardSelection = (card, type) => {
     setSelectedCard(card);
     setQuery(card);
     setFilteredCards([]);
-    setExpandedOfferIndex({ pvr: null, inox: null, bms: null });
-    setShowNoCardMessage(false);
-    if (typingTimeout) {
-      clearTimeout(typingTimeout);
-    }
+    setNoOffersMessage(false);
+    setIsDebitCardSelected(type === "debit");
   };
 
-  const getOffersForSelectedCard = (offers, isDebit = false) => {
+  const getOffersForSelectedCard = (offers, isDebit = false, isPermanent = false) => {
     return offers.filter((offer) => {
       if (isDebit) {
         return (
           offer["Applicable Debit Cards"] &&
           offer["Applicable Debit Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
         );
+      } else if (isPermanent) {
+        return (
+          offer["Credit Card Name"] &&
+          offer["Credit Card Name"].trim() === selectedCard
+        );
       } else {
-        return offer["Credit Card"] && offer["Credit Card"].trim() === selectedCard;
+        return (
+          offer["Eligible Cards"] &&
+          offer["Eligible Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
+        );
       }
     });
   };
 
-  const getMovieBenefitsForSelectedCard = () => {
-    return movieBenefits.filter(offer => {
-      const cardName = offer["Credit Card Name"] ? offer["Credit Card Name"].trim() : "";
-      return cardName.toLowerCase() === selectedCard.toLowerCase();
+  const selectedEaseOffers = getOffersForSelectedCard(easeOffers);
+  const selectedYatraDomesticOffers = getOffersForSelectedCard(yatraDomesticOffers);
+  const selectedYatraInternationalOffers = getOffersForSelectedCard(yatraInternationalOffers);
+  const selectedIxigoOffers = getOffersForSelectedCard(ixigoOffers);
+  const selectedDebitAirlineOffers = getOffersForSelectedCard(airlineOffers, true);
+  const selectedMakeMyTripOffers = getOffersForSelectedCard(makeMyTripOffers);
+  const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
+  const selectedGoibiboOffers = getOffersForSelectedCard(goibiboOffers);
+  const selectedPermanentOffers = getOffersForSelectedCard(permanentOffers, false, true);
+
+  // Calculate if we should show scroll button
+  const hasAnyOffers = 
+    selectedEaseOffers.length > 0 ||
+    selectedYatraDomesticOffers.length > 0 ||
+    selectedYatraInternationalOffers.length > 0 ||
+    selectedIxigoOffers.length > 0 ||
+    selectedDebitAirlineOffers.length > 0 ||
+    selectedMakeMyTripOffers.length > 0 ||
+    selectedClearTripOffers.length > 0 ||
+    selectedGoibiboOffers.length > 0 ||
+    selectedPermanentOffers.length > 0;
+  
+  const showScrollButton = hasAnyOffers;
+
+  // Scroll down handler
+  const handleScrollDown = () => {
+    window.scrollBy({
+      top: window.innerHeight,
+      behavior: "smooth"
     });
   };
 
-  const selectedPvrOffers = getOffersForSelectedCard(pvrOffers);
-  const selectedInoxOffers = getOffersForSelectedCard(inoxOffers);
-  const selectedBookMyShowOffers = getOffersForSelectedCard(bookMyShowOffers);
-  const selectedMovieDebitOffers = getOffersForSelectedCard(movieDebitOffers, true);
-  const selectedMovieBenefits = getMovieBenefitsForSelectedCard();
-
-  const hasAnyOffers = () => {
-    return (
-      selectedPvrOffers.length > 0 ||
-      selectedInoxOffers.length > 0 ||
-      selectedBookMyShowOffers.length > 0 ||
-      selectedMovieDebitOffers.length > 0 ||
-      selectedMovieBenefits.length > 0
-    );
-  };
-
   return (
-    <div className="App">
-      <div className="content-container">
-        <div className="creditCardDropdown" style={{ position: "relative", width: "600px", margin: "2px auto", marginTop:"2px" }}>
-          <input
-            type="text"
-            value={query}
-            onChange={handleInputChange}
-            placeholder="Type a Credit Card..."
+    <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
+      <div
+        className="dropdown"
+        style={{ position: "relative", width: "600px", margin: "2px auto" }}
+      >
+        <input
+          type="text"
+          value={query}
+          onChange={handleInputChange}
+          placeholder="Type a Credit/ Debit Card..."
+          style={{
+            width: "100%",
+            padding: "12px",
+            fontSize: "16px",
+            border: "1px solid #ccc",
+            borderRadius: "5px",
+          }}
+        />
+
+        {filteredCards.length > 0 && (
+          <ul
             style={{
-              width: "90%",
-              padding: "12px",
-              fontSize: "16px",
-              border: `1px solid ${showNoCardMessage ? 'red' : '#ccc'}`,
+              listStyleType: "none",
+              padding: "10px",
+              margin: 0,
+              width: "100%",
+              maxHeight: "200px",
+              overflowY: "auto",
+              border: "1px solid #ccc",
               borderRadius: "5px",
+              backgroundColor: "#fff",
+              position: "absolute",
+              zIndex: 1000,
             }}
-          />
-          {filteredCards.length > 0 && (
-            <ul
-              style={{
-                listStyleType: "none",
-                padding: "10px",
-                margin: 0,
-                width: "90%",
-                maxHeight: "200px",
-                overflowY: "auto",
-                border: "1px solid #ccc",
-                borderRadius: "5px",
-                backgroundColor: "#fff",
-                position: "absolute",
-                zIndex: 1000,
-              }}
-            >
-              {filteredCards.map((item, index) =>
-                item.type === "heading" ? (
-                  <li key={index} className="dropdown-heading">
-                    <strong>{item.label}</strong>
-                  </li>
-                ) : (
-                  <li
-                    key={index}
-                    onClick={() => handleCardSelection(item.card)}
-                    style={{
-                      padding: "10px",
-                      cursor: "pointer",
-                      borderBottom:
-                        index !== filteredCards.length - 1
-                          ? "1px solid #eee"
-                          : "none",
-                    }}
-                    onMouseOver={(e) =>
-                      (e.target.style.backgroundColor = "#f0f0f0")
-                    }
-                    onMouseOut={(e) =>
-                      (e.target.style.backgroundColor = "transparent")
-                    }
-                  >
-                    {item.card}
-                  </li>
-                )
-              )}
-            </ul>
-          )}
-        </div>
-
-        {showNoCardMessage && (
-          <div style={{
-            textAlign: "center",
-            margin: "40px 0",
-            fontSize: "20px",
-            color: "red",
-            fontWeight: "bold"
-          }}>
-            No offers for this card
-          </div>
-        )}
-
-        {selectedCard && !hasAnyOffers() && !showNoCardMessage && (
-          <div style={{
-            textAlign: "center",
-            margin: "40px 0",
-            fontSize: "20px",
-            color: "#666"
-          }}>
-            No offers found for {selectedCard}
-          </div>
-        )}
-
-        {selectedCard && hasAnyOffers() && (
-          <div className="offer-section">
-            {selectedMovieBenefits.length > 0 && (
-              <div className="offer-container">
-                <h2 style={{ textAlign: "center", margin: "20px 0" }}>Permanent Offers on {selectedCard}</h2>
-                <div className="offer-row">
-                  {selectedMovieBenefits.map((benefit, index) => (
-                    <div key={`benefit-${index}`} className="offer-card" style={{backgroundColor: "#f5f5f5", color: "black"}}>
-                      {benefit.image && (
-                        <img 
-                          src={benefit.image} 
-                          alt={benefit["Credit Card Name"] || "Card Offer"} 
-                          style={{ 
-                            maxWidth: "100%", 
-                            height: "auto",
-                            maxHeight: "150px",
-                            objectFit: "contain",
-                          }}
-                        />
-                      )}
-                      <h3>{benefit["Credit Card Name"] || "Card Offer"}</h3>
-                      {benefit["Movie Benefit"] && <p><strong>Benefit:</strong> {benefit["Movie Benefit"]}</p>}
-                      {benefit.Terms && <p><strong>Terms:</strong> {benefit.Terms}</p>}
-                      {benefit.Link && (
-                        <button 
-                          onClick={() => window.open(benefit.Link, "_blank")}
-                          className="view-details-btn"
-                        >
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+          >
+            {filteredCards.map((item, index) =>
+              item.type === "heading" ? (
+                <li key={index} style={{ padding: "10px", fontWeight: "bold" }}>
+                  {item.label}
+                </li>
+              ) : (
+                <li
+                  key={index}
+                  onClick={() => handleCardSelection(item.card, item.type)}
+                  style={{
+                    padding: "10px",
+                    cursor: "pointer",
+                    borderBottom:
+                      index !== filteredCards.length - 1
+                        ? "1px solid #eee"
+                        : "none",
+                  }}
+                  onMouseOver={(e) =>
+                    (e.target.style.backgroundColor = "#f0f0f0")
+                  }
+                  onMouseOut={(e) =>
+                    (e.target.style.backgroundColor = "transparent")
+                  }
+                >
+                  {item.card}
+                </li>
+              )
             )}
-
-            {selectedPvrOffers.length > 0 && (
-              <div className="offer-container">
-                <h2>PVR Offers</h2>
-                <div className="offer-row">
-                  {selectedPvrOffers.map((offer, index) => (
-                    <div 
-                      key={`pvr-${index}`} 
-                      className={`offer-card ${expandedOfferIndex.pvr === index ? 'expanded' : ''}`}
-                      style={{
-                        backgroundColor: "#f5f5f5", 
-                        color: "black",
-                        height: expandedOfferIndex.pvr === index ? 'auto' : '400px',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {offer.Image && (
-                        <img 
-                          src={offer.Image} 
-                          alt={offer.Title || "PVR Offer"} 
-                          style={{ 
-                            maxWidth: "100%", 
-                            height: "auto",
-                            maxHeight: "150px",
-                            objectFit: "contain"
-                          }} 
-                        />
-                      )}
-                      <h3>{offer.Title || "PVR Offer"}</h3>
-                      {offer.Validity && <p><strong>Validity:</strong> {offer.Validity}</p>}
-                      
-                      {expandedOfferIndex.pvr === index && (
-                        <div className="terms-container" style={{ 
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                          padding: '10px',
-                          backgroundColor: 'rgba(0,0,0,0.1)',
-                          borderRadius: '5px',
-                          marginTop: '10px'
-                        }}>
-                          <h4>Offer Details:</h4>
-                          <p>{offer.Offers}</p>
-                        </div>
-                      )}
-                      
-                      <button 
-                        onClick={() => toggleOfferDetails("pvr", index)}
-                        className={`details-btn ${expandedOfferIndex.pvr === index ? "active" : ""}`}
-                        style={{ marginTop: '10px' }}
-                      >
-                        {expandedOfferIndex.pvr === index ? "Hide Details" : "Click For More Details"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedInoxOffers.length > 0 && (
-              <div className="offer-container">
-                <h2>INOX Offers</h2>
-                <div className="offer-row">
-                  {selectedInoxOffers.map((offer, index) => (
-                    <div 
-                      key={`inox-${index}`} 
-                      className={`offer-card ${expandedOfferIndex.inox === index ? 'expanded' : ''}`}
-                      style={{
-                        backgroundColor: "#f5f5f5", 
-                        color: "black",
-                        height: expandedOfferIndex.inox === index ? 'auto' : '400px',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {offer.Image && (
-                        <img 
-                          src={offer.Image} 
-                          alt={offer.Title || "INOX Offer"} 
-                          style={{ 
-                            maxWidth: "100%", 
-                            height: "auto",
-                            maxHeight: "150px",
-                            objectFit: "contain"
-                          }} 
-                        />
-                      )}
-                      <h3>{offer.Title || "INOX Offer"}</h3>
-                      {offer.Validity && <p><strong>Validity:</strong> {offer.Validity}</p>}
-                      
-                      {expandedOfferIndex.inox === index && (
-                        <div className="terms-container" style={{ 
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                          padding: '10px',
-                          backgroundColor: 'rgba(0,0,0,0.1)',
-                          borderRadius: '5px',
-                          marginTop: '10px'
-                        }}>
-                          <h4>Offer Details:</h4>
-                          <p>{offer.Offers}</p>
-                        </div>
-                      )}
-                      
-                      <button 
-                        onClick={() => toggleOfferDetails("inox", index)}
-                        className={`details-btn ${expandedOfferIndex.inox === index ? "active" : ""}`}
-                        style={{ marginTop: '10px' }}
-                      >
-                        {expandedOfferIndex.inox === index ? "Hide Details" : "Click For More Details"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedBookMyShowOffers.length > 0 && (
-              <div className="offer-container">
-                <h2>BookMyShow Offers</h2>
-                <div className="offer-row">
-                  {selectedBookMyShowOffers.map((offer, index) => (
-                    <div 
-                      key={`bms-${index}`} 
-                      className={`offer-card ${expandedOfferIndex.bms === index ? 'expanded' : ''}`}
-                      style={{
-                        backgroundColor: "#f5f5f5", 
-                        color: "black",
-                        height: "auto",
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {offer.Image && (
-                        <img 
-                          src={offer.Image} 
-                          alt={offer.Title || "BookMyShow Offer"} 
-                          style={{ 
-                            maxWidth: "100%", 
-                            height: "auto",
-                            maxHeight: "150px",
-                            objectFit: "contain"
-                          }} 
-                        />
-                      )}
-                      <h3>{offer.Title || "BookMyShow Offer"}</h3>
-                      {offer.Offer && <p><strong>Offer:</strong> {offer.Offer}</p>}
-                      {offer.Validity && <p><strong>Validity:</strong> {offer.Validity}</p>}
-                      
-                      {expandedOfferIndex.bms === index && (
-                        <div className="terms-container" style={{ 
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                          padding: '10px',
-                          backgroundColor: 'rgba(0,0,0,0.1)',
-                          borderRadius: '5px',
-                          marginTop: '10px'
-                        }}>
-                          <h4>Offer Details:</h4>
-                          <p>{offer.Offers || "No additional details available"}</p>
-                        </div>
-                      )}
-                      
-                      {offer.Link ? (
-                        <a 
-                          href={offer.Link} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          style={{ textDecoration: "none" }}
-                        >
-                          <button 
-                            className="view-details-btn"
-                            style={{ marginTop: '10px', cursor: 'pointer' }}
-                          >
-                            View Details
-                          </button>
-                        </a>
-                      ) : (
-                        <button 
-                          onClick={() => toggleOfferDetails("bms", index)}
-                          className={`details-btn ${expandedOfferIndex.bms === index ? "active" : ""}`}
-                          style={{ marginTop: '10px' }}
-                        >
-                          {expandedOfferIndex.bms === index ? "Hide Details" : "Click For More Details"}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedMovieDebitOffers.length > 0 && (
-              <div className="offer-container">
-                <h2>Debit Card Offers</h2>
-                <div className="offer-row">
-                  {selectedMovieDebitOffers.map((offer, index) => (
-                    <div 
-                      key={`debit-${index}`} 
-                      className="offer-card" 
-                      style={{ backgroundColor: "#f5f5f5", color: "black" }}
-                    >
-                      {offer.Image && (
-                        <img 
-                          src={offer.Image} 
-                          alt={offer.Website || "Debit Card Offer"} 
-                          style={{ 
-                            maxWidth: "100%", 
-                            height: "auto",
-                            maxHeight: "150px",
-                            objectFit: "contain"
-                          }}
-                        />
-                      )}
-                      <h3>{offer.Website || "Debit Card Offer"}</h3>
-                      {offer.Offer && <p>{offer.Offer}</p>}
-                      {offer.Link && (
-                        <a 
-                          href={offer.Link} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="view-details-btn"
-                          style={{
-                            display: "inline-block",
-                            padding: "10px 20px",
-                            backgroundColor: "#1e7145",
-                            color: "#fff",
-                            borderRadius: "5px",
-                            textDecoration: "none",
-                            fontWeight: "bold",
-                            marginTop: "10px"
-                          }}
-                        >
-                          View Details
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          </ul>
         )}
       </div>
+
+      {noOffersMessage && (
+        <p style={{ color: "red", textAlign: "center", marginTop: "10px" }}>
+          No matching offers found for the entered card.
+        </p>
+      )}
+
+      {selectedCard && (
+        <div className="offers-section" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+          {/* Debit Card Offers Section - Show first if debit card selected */}
+          {isDebitCardSelected && selectedDebitAirlineOffers.length > 0 && (
+            <div>
+              <h2>Debit Card Offers</h2>
+              <div className="offer-grid">
+                {selectedDebitAirlineOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Website} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"] || offer.Website}</h3>
+                      {offer.Validity && <p>Validity: {offer.Validity}</p>}
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Permanent Offers Section */}
+          {!isDebitCardSelected && selectedPermanentOffers.length > 0 && (
+            <div>
+              <h2>Permanent Offers</h2>
+              <div className="offer-grid">
+                {selectedPermanentOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    <img src={offer["Credit Card Image"]} alt={offer["Credit Card Name"]} />
+                    <div className="offer-info">
+                      <h3>{offer["Flight Benefit"]}</h3>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Goibibo Offers Section */}
+          {!isDebitCardSelected && selectedGoibiboOffers.length > 0 && (
+            <div>
+              <h2>Offers on Goibibo</h2>
+              <div className="offer-grid">
+                {selectedGoibiboOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* EaseMyTrip Offers Section */}
+          {!isDebitCardSelected && selectedEaseOffers.length > 0 && (
+            <div>
+              <h2>Offers on EaseMyTrip</h2>
+              <div className="offer-grid">
+                {selectedEaseOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Yatra Domestic Offers Section */}
+          {!isDebitCardSelected && selectedYatraDomesticOffers.length > 0 && (
+            <div>
+              <h2>Offers on Yatra (Domestic)</h2>
+              <div className="offer-grid">
+                {selectedYatraDomesticOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Yatra International Offers Section */}
+          {!isDebitCardSelected && selectedYatraInternationalOffers.length > 0 && (
+            <div>
+              <h2>Offers on Yatra (International)</h2>
+              <div className="offer-grid">
+                {selectedYatraInternationalOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ixigo Offers Section */}
+          {!isDebitCardSelected && selectedIxigoOffers.length > 0 && (
+            <div>
+              <h2>Offers on Ixigo</h2>
+              <div className="offer-grid">
+                {selectedIxigoOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* MakeMyTrip Offers Section */}
+          {!isDebitCardSelected && selectedMakeMyTripOffers.length > 0 && (
+            <div>
+              <h2>Offers on MakeMyTrip</h2>
+              <div className="offer-grid">
+                {selectedMakeMyTripOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ClearTrip Offers Section */}
+          {!isDebitCardSelected && selectedClearTripOffers.length > 0 && (
+            <div>
+              <h2>Offers on ClearTrip</h2>
+              <div className="offer-grid">
+                {selectedClearTripOffers.map((offer, index) => (
+                  <div key={index} className="offer-card">
+                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
+                    <div className="offer-info">
+                      <h3>{offer["Offer Title"]}</h3>
+                      {offer.Link && (
+                        <button onClick={() => window.open(offer.Link, "_blank")}>
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Scroll Down Button */}
       {showScrollButton && (
@@ -587,30 +467,23 @@ const CreditCardDropdown = () => {
           style={{
             position: 'fixed',
             right: '20px',
-            bottom: '20px',
-            padding: window.innerWidth > 768 ? '10px 15px' : '8px 12px',
+            bottom: '150px',
+            padding: '10px 15px',
             backgroundColor: '#4CAF50',
             color: 'white',
             border: 'none',
-            borderRadius: window.innerWidth > 768 ? '5px' : '50%',
+            borderRadius: '5px',
             cursor: 'pointer',
-            fontSize: window.innerWidth > 768 ? '16px' : '24px',
+            fontSize: '16px',
             zIndex: 1000,
-            boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-            width: window.innerWidth > 768 ? 'auto' : '50px',
-            height: window.innerWidth > 768 ? 'auto' : '50px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.3s ease'
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
           }}
-          aria-label="Scroll down"
         >
-          {window.innerWidth > 768 ? 'Scroll Down' : '↓'}
+          Scroll Down
         </button>
       )}
     </div>
   );
 };
 
-export default CreditCardDropdown;
+export default AirlineOffers;
