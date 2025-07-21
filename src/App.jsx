@@ -198,7 +198,7 @@ const AirlineOffers = () => {
           type="text"
           value={query}
           onChange={handleInputChange}
-          placeholder="Type a Credit/ Debit Card..."
+          placeholder="Type a Credit Card..."
           style={{
             width: "100%",
             padding: "12px",
