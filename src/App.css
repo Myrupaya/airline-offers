@@ -1,309 +1,170 @@
-/* Global Styles */
-body {
+/* Global */
+body{
   font-family: Arial, sans-serif;
-  color: #333;
-  margin: 0;
-  padding: 0;
+  color:#333;
+  margin:0;
+  padding:0;
+  background: linear-gradient(135deg,#F8F9FA 3%,#E9ECEF 100%,#CECDC9 100%);
 }
 
-body {
-  @apply min-h-screen;
-  background: linear-gradient(135deg, #F8F9FA 3%, #E9ECEF 100%, #CECDC9 100%);
+.App{ text-align:center; padding:20px; }
 
+/* ----------------  Section & Titles  ---------------- */
+.offers-section{ max-width:1200px; margin:0 auto; padding:20px; }
+
+.offer-group{ margin:24px 0 8px; }
+.offer-group > h2{
+  text-align:center;                /* centered section headings */
+  font-weight:700;
+  font-size:28px;
+  margin:6px 0 22px;
 }
 
-/* Grid & card look (hotel-style) */
-.offer-group {
-  margin: 24px 0 8px;
-}
-.offer-group > h2 {
-  text-align: center;
-  font-weight: 700;
-  margin: 6px 0 18px;
-}
-
-.offer-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
+/* ----------------  Grid & Cards  ---------------- */
+.offer-grid{
+  display:grid;
+  /* Left-starting grid on desktop; cards stretch to column width */
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap:32px;
+  justify-items:stretch;            /* cards take full column width */
+  align-items:stretch;
 }
 
-.offer-card {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.07);
-  overflow: hidden;
-  border: 1px solid #eee;
+.offer-card{
+  background:#fff;
+  border-radius:12px;
+  border:1px solid #eee;
+  box-shadow:0 6px 18px rgba(0,0,0,0.07);
+  overflow:hidden;
+  width:90%;                       /* no fixed max-width; let grid control width */
 }
 
-.offer-card img {
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-  display: block;
+.offer-card img{
+  width:100%;
+  height:220px;
+  object-fit:cover;
+  display:block;
 }
 
-.offer-info {
-  padding: 18px 18px 20px;
-  text-align: center;
-  font-family: 'Libre Baskerville', serif;
+.offer-info{
+  padding:18px 18px 20px;
+  text-align:center;
+  font-family:'Libre Baskerville', serif;
 }
 
-.offer-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 6px 0 10px;
-  text-transform: uppercase; /* like your screenshot */
-  letter-spacing: 0.2px;
+.offer-title{
+  font-size:18px;
+  font-weight:700;
+  margin:6px 0 10px;
+  text-transform:uppercase;
+  letter-spacing:0.2px;
 }
 
-.offer-desc {
-  font-size: 16px;
-  line-height: 1.65;
-  margin: 0 0 10px 0;
+.offer-desc{
+  font-size:16px;
+  line-height:1.65;
+  margin:0 0 10px 0;
 }
 
 /* permanent offers extra line */
-.inbuilt-note {
-  margin: 4px 0 10px;
-  font-size: 15px;
-}
+.inbuilt-note{ margin:4px 0 10px; font-size:15px; }
 
-.network-note {
-  color: #d32f2f;
-  font-weight: 600;
-  margin: 10px 0 12px;
+.network-note{
+  color:#d32f2f;
+  font-weight:600;
+  margin:10px 0 12px;
 }
 
 /* CTA */
-.btn {
-  background: #1e7145;
-  color: #fff;
-  border: none;
-  padding: 10px 18px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 700;
+.btn{
+  background:#1e7145;
+  color:#fff;
+  border:none;
+  padding:10px 18px;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:700;
 }
-.btn:hover { filter: brightness(0.95); }
+.btn:hover{ filter:brightness(0.95); }
 
-/* Dropdown input (light tweak) */
-.dropdown-input:focus {
-  outline: none;
-  border-color: #7a8cff;
-  box-shadow: 0 0 0 3px rgba(122, 140, 255, 0.15);
-}
-
-/* Disclaimer block — styled like the screenshot */
-.disclaimer {
-  max-width: 900px;
-  margin: 36px auto 84px;
-  text-align: center;
-  color: #2f2f2f;
-  font-family: 'Libre Baskerville', serif;
-  padding: 0 16px;
-}
-.disclaimer h3 {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 0 0 10px;
-  letter-spacing: 0.2px;
-}
-.disclaimer p {
-  font-size: 16px;
-  line-height: 1.65;
-  margin: 0;
-}
-.disclaimer::before {
-  content: "";
-  display: block;
-  width: 84%;
-  max-width: 760px;
-  height: 1px;
-  background: #e9e9e9;
-  margin: 0 auto 18px;
+/* ----------------  Dropdown  ---------------- */
+.dropdown-input:focus{
+  outline:none;
+  border-color:#7a8cff;
+  box-shadow:0 0 0 3px rgba(122,140,255,.15);
 }
 
-@media (max-width: 768px) {
-  .offer-card img { height: 180px; }
-  .offer-title { font-size: 17px; }
-  .offer-desc { font-size: 15px; }
-  .disclaimer { margin: 28px auto 64px; }
-  .disclaimer h3 { font-size: 20px; }
-  .disclaimer p { font-size: 14.5px; line-height: 1.7; }
+/* Only styling helpers; the list itself is rendered inline from JS */
+ul{
+  list-style:none;
+  margin:0;
+  padding:0;
+  max-height:260px;
+  overflow-y:auto;
+  border:1px solid #ccc;
+  border-radius:6px;
+  background:#fff;
+  position:absolute;
+  z-index:1000;
+  width:100%;
+}
+ul li{
+  padding:10px;
+  cursor:pointer;
+  border-bottom:1px solid #eee;
+  transition:background-color .2s ease;
+}
+ul li:hover{ background:#f0f0f0; }
+
+/* ----------------  Disclaimer (as before)  ---------------- */
+.disclaimer{
+  max-width:900px;
+  margin:36px auto 84px;
+  text-align:center;
+  color:#2f2f2f;
+  font-family:'Libre Baskerville', serif;
+  padding:0 16px;
+}
+.disclaimer h3{
+  font-size:22px;
+  font-weight:700;
+  margin:0 0 10px;
+  letter-spacing:.2px;
+}
+.disclaimer p{
+  font-size:16px;
+  line-height:1.65;
+  margin:0;
+}
+.disclaimer::before{
+  content:"";
+  display:block;
+  width:84%;
+  max-width:760px;
+  height:1px;
+  background:#e9e9e9;
+  margin:0 auto 18px;
 }
 
-
-/* General Container */
-.App {
-  text-align: center;
-  padding: 20px;
-}
-
-h1 {
-  font-size: 34px;
-  color: #444;
-  margin-bottom: 20px;
-}
-
-.offers-section h2{
-  font-size: 28px;
-  margin-bottom: 30px;
-  margin-top: 30px;
-}
-
-/* Search Box and Filtered List */
-input[type="text"] {
-  width: 100%;
-  padding: 12px;
-  font-size: 16px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-}
-
-ul {
-  list-style-type: none;
-  margin: 0;
-  padding: 0;
-  max-height: 200px;
-  overflow-y: auto;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  background-color: #fff;
-  position: absolute;
-  z-index: 1000;
-  width: 100%;
-}
-
-ul li {
-  padding: 10px;
-  cursor: pointer;
-  border-bottom: 1px solid #eee;
-  transition: background-color 0.2s ease;
-}
-
-ul li:hover {
-  background-color: #f0f0f0;
-}
-
-.offers-section {
-  padding: 20px;
-}
-
-.offer-group {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 40px;
-}
-
-.offer-group h2 {
-  flex: 0 0 200px; /* Fixed width for the heading */
-  text-align: left;
-  font-size: 24px;
-  margin: 0;
-  padding: 10px 0;
-}
-
-.offer-grid {
-  flex: 1; /* Let the grid take the remaining space */
-  display: flex;
-  flex-wrap: wrap;
-  gap: 50px;
-  justify-content: flex-start; /* Align cards to the left */
-}
-
-.offer-card {
-  background-color: #f5f5f5;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  max-width: 300px;
-  flex: 1 1 1calc(35% - 20px); /* For 2 cards on desktop */
-  margin: 10px;
-  margin-left: 70px; /* Add spacing around each card */
-}
-
-
-.offer-card img {
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-}
-
-.offer-info {
-  padding: 15px;
-}
-
-.offer-info h3 {
-  margin: 0 0 10px;
-  font-size: 18px;
-}
-
-.offer-info p {
-  font-size: 16px;
-  margin-bottom: 10px;
-}
-
-.offer-info button {
-  background-color: #1e7145;
-  color: #fff;
-  padding: 10px 15px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.offer-info button:hover {
-  background-color: #0056b3;
-}
-
-@media (max-width: 768px) {
-  .dropdown {
-    max-width: 90%;
+/* ----------------  Responsive  ---------------- */
+@media (max-width: 1024px){
+  .offer-grid{
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap:28px;
   }
-  
-  .offer-group {
-    flex-direction: column; /* Stack heading and cards vertically on mobile */
-    align-items: center; /* Ensure alignment for the entire group */
-  }
+  .offer-card img{ height:200px; }
+}
 
-  .offer-grid {
-    justify-content: center; /* Center cards */
-    width: 100%; /* Allow grid to take full width */
+@media (max-width: 768px){
+  .dropdown{ max-width:90%; margin:0 auto; }
+  .offer-grid{
+    grid-template-columns: 1fr;     /* single column like your mobile screenshot */
+    gap:22px;
   }
-
-  .offer-card {
-    flex: none; /* Disable shrinking or growing */
-    width: 95%; /* Set a specific width for mobile */
-    display: flex;
-    flex-direction: column; /* Stack content vertically */
-    align-items: center; /* Center align card content */
-    text-align: center;
-    padding: 10px;
-    box-sizing: border-box; /* Ensure padding is included in width */
-    margin: 0;
-  }
-
-  .offer-card img {
-    width: 100%; /* Full width of the card */
-    height: auto; /* Maintain aspect ratio */
-    margin-bottom: 10px; /* Add space below the image */
-  }
-
-  .offer-info h3 {
-    font-size: 16px; /* Slightly smaller title size for mobile */
-    margin: 10px 0;
-  }
-
-  .offer-info p {
-    font-size: 14px; /* Adjust font size for better readability */
-    margin-bottom: 15px;
-  }
-
-  .offer-info button {
-    width: 100%; /* Make button full width */
-    font-size: 14px; /* Adjust font size for smaller screens */
-    padding: 10px; /* Ensure proper spacing */
-  }
+  .offer-card img{ height:auto; }
+  .offer-title{ font-size:17px; }
+  .offer-desc{ font-size:15px; }
+  .disclaimer{ margin:28px auto 64px; }
+  .disclaimer h3{ font-size:20px; }
+  .disclaimer p{ font-size:14.5px; line-height:1.7; }
 }

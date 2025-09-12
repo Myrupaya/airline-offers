@@ -1,24 +1,25 @@
-import { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import Papa from "papaparse";
 import "./App.css";
 
 /** -------------------- CONFIG -------------------- */
 const LIST_FIELDS = {
+  // multi-source field names
   credit: ["Eligible Credit Cards", "Eligible Cards"],
   debit: ["Eligible Debit Cards", "Applicable Debit Cards"],
   title: ["Offer Title", "Title"],
-  image: ["Image", "Credit Card Image"],
-  link: ["Link"],
+  image: ["Image", "Credit Card Image", "Offer Image"],
+  link: ["Link", "Offer Link"],
   desc: ["Description", "Details", "Offer Description", "Flight Benefit"],
   permanentCCName: ["Credit Card Name"],
-  permanentBenefit: ["Flight Benefit", "Benefit", "Offer"],
+  permanentBenefit: ["Flight Benefit", "Benefit", "Offer", "Hotel Benefit"],
 };
 
 const MAX_SUGGESTIONS = 50;
 
-/** show per-card variant note inside every OTA card */
-const SHOW_VARIANT_NOTE_SITES = new Set([
+/** Sites where we want the red per-card “Applicable only on {variant} variant” note */
+const VARIANT_NOTE_SITES = new Set([
   "EaseMyTrip",
   "Yatra (Domestic)",
   "Yatra (International)",
@@ -26,34 +27,19 @@ const SHOW_VARIANT_NOTE_SITES = new Set([
   "MakeMyTrip",
   "ClearTrip",
   "Goibibo",
-  "Airline",
-  "Permanent",
+  "Airline",     // generic airline csv (optional but helpful)
+  "Permanent",   // show as well for permanent cards (when present)
 ]);
 
-/** Network & tier alias maps */
-const NETWORK_ALIASES = {
-  visa: ["visa", "vs"],
-  mastercard: ["mastercard", "master card", "mc", "master"],
-  rupay: ["rupay", "ru-pay", "ru pay"],
-  amex: ["amex", "americanexpress", "american express"],
-  diners: ["diners", "dinersclub", "diners club"],
-};
-
-const TIER_ALIASES = {
-  signature: ["signature", "sig"],
-  platinum: ["platinum", "plat"],
-  world: ["world"],
-  select: ["select"],
-  classic: ["classic"],
-  titanium: ["titanium"],
-  elite: ["elite"],
-  prime: ["prime"],
-  gold: ["gold"],
-  infinite: ["infinite", "infinity"],
-  black: ["black"],
-};
-
 /** -------------------- HELPERS -------------------- */
+const toNorm = (s) =>
+  String(s || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 function firstField(obj, keys) {
   for (const k of keys) {
     if (
@@ -72,181 +58,92 @@ function firstField(obj, keys) {
 function splitList(val) {
   if (!val) return [];
   return String(val)
+    .replace(/\n/g, " ")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-function normalize(str) {
-  return String(str || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+/** Extract base name (strip trailing (...) ) */
+function getBase(name) {
+  if (!name) return "";
+  return String(name).replace(/\s*\([^)]*\)\s*$/, "").trim();
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
-}
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function capFirst(s) {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+/** Variant ONLY if in parentheses at the end:  "… (Visa Signature)" → "Visa Signature" */
+function getVariant(name) {
+  if (!name) return "";
+  const m = String(name).match(/\(([^)]+)\)\s*$/);
+  return m ? m[1].trim() : "";
 }
 
-/** Extract base + optional variant from cards where the variant is provided in parentheses after the name */
-function extractVariant(name) {
-  const raw = String(name || "");
-
-  // base = text before the last trailing (...) group, if any
-  const base = raw.replace(/\s*\([^)]*\)\s*$/, "").trim();
-
-  // variant = inside trailing parentheses, if present
-  const match = raw.match(/\(([^)]+)\)\s*$/);
-  const variantFromParens = match ? match[1].trim() : null;
-
-  if (variantFromParens) {
-    return { base, variant: variantFromParens };
-  }
-
-  // fallback (rare): infer from aliases in case a CSV missed parentheses
-  const lower = raw.toLowerCase();
-  const networks = Object.keys(NETWORK_ALIASES).filter((canon) =>
-    NETWORK_ALIASES[canon].some((a) => lower.includes(a))
-  );
-  const tiers = Object.keys(TIER_ALIASES).filter((canon) =>
-    TIER_ALIASES[canon].some((a) => lower.includes(a))
-  );
-  let inferred = null;
-  if (networks.length && tiers.length) inferred = `${capFirst(networks[0])} ${capFirst(tiers[0])}`;
-  else if (networks.length) inferred = `${capFirst(networks[0])}`;
-  else if (tiers.length) inferred = `${capFirst(tiers[0])}`;
-
-  return { base, variant: inferred };
+/** Small brand canonicalizer so “Makemytrip” → “MakeMyTrip”, “ICICI” stays ICICI, etc. */
+function brandCanonicalize(text) {
+  let s = String(text || "");
+  s = s.replace(/\bMakemytrip\b/gi, "MakeMyTrip");
+  s = s.replace(/\bIcici\b/gi, "ICICI");
+  s = s.replace(/\bHdfc\b/gi, "HDFC");
+  s = s.replace(/\bSbi\b/gi, "SBI");
+  s = s.replace(/\bIdfc\b/gi, "IDFC");
+  s = s.replace(/\bPnb\b/gi, "PNB");
+  s = s.replace(/\bRbl\b/gi, "RBL");
+  s = s.replace(/\bYes\b/gi, "YES");
+  return s;
 }
 
-function tokensOf(str) {
-  return normalize(str).split(" ").filter(Boolean);
-}
-
-/** Damerau–Levenshtein */
-function levenshtein(a, b) {
-  a = normalize(a);
-  b = normalize(b);
-  const al = a.length;
-  const bl = b.length;
-  if (!al) return bl;
-  if (!bl) return al;
-
-  const dp = Array.from({ length: al + 1 }, () => Array(bl + 1).fill(0));
-  for (let i = 0; i <= al; i++) dp[i][0] = i;
-  for (let j = 0; j <= bl; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= al; i++) {
-    for (let j = 1; j <= bl; j++) {
+/** Levenshtein distance (for fuzzy ranking) */
+function lev(a, b) {
+  a = toNorm(a);
+  b = toNorm(b);
+  const n = a.length,
+    m = b.length;
+  if (!n) return m;
+  if (!m) return n;
+  const d = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+  for (let i = 0; i <= n; i++) d[i][0] = i;
+  for (let j = 0; j <= m; j++) d[0][j] = j;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost
-      );
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + cost);
-      }
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
     }
   }
-  return dp[al][bl];
+  return d[n][m];
 }
 
-/** Score a candidate vs query tokens */
-function scoreEntry(entry, qTokens) {
-  let score = 0;
-  const cand = normalize(entry.display);
-  const candTokens = entry.tokens;
+function scoreCandidate(q, cand) {
+  const qs = toNorm(q);
+  const cs = toNorm(cand);
+  if (!qs) return 0;
+  if (cs.includes(qs)) return 100;
 
-  // hard containment boost
-  if (qTokens.length && qTokens.every((t) => cand.includes(t))) score += 30;
+  const qWords = qs.split(" ").filter(Boolean);
+  const cWords = cs.split(" ").filter(Boolean);
 
-  // token similarity
-  for (const qt of qTokens) {
-    let best = 0;
-    for (const ct of candTokens) {
-      if (!ct) continue;
-      if (ct === qt) best = Math.max(best, 12);
-      else if (ct.startsWith(qt)) best = Math.max(best, 9);
-      else {
-        const d = levenshtein(qt, ct);
-        const m = Math.max(qt.length, ct.length);
-        const sim = 1 - d / m;
-        if (sim > 0.6) best = Math.max(best, sim * 8);
-      }
-    }
-    score += best;
-  }
-
-  score += Math.max(0, 6 - Math.min(6, entry.display.length / 20));
-  return score;
+  const matchingWords = qWords.filter((qw) => cWords.some((cw) => cw.includes(qw))).length;
+  const sim = 1 - lev(qs, cs) / Math.max(qs.length, cs.length);
+  return (matchingWords / Math.max(1, qWords.length)) * 0.7 + sim * 0.3;
 }
 
-/** Highlight tokens in dropdown text */
-function highlightHtml(text, qTokens) {
-  let out = escapeHtml(text);
-  qTokens.forEach((t) => {
-    if (!t) return;
-    const re = new RegExp(`(${escapeRegExp(t)})`, "ig");
-    out = out.replace(re, "<mark>$1</mark>");
-  });
-  return { __html: out };
-}
-
-/** tell which form matched: 'display' | 'base' | 'variant' | null */
-function whichMatch(list, selectedDisplay, base, variant) {
-  const norm = (s) => normalize(s);
-
-  const targetDisplay = norm(selectedDisplay);
-  const targetBase = norm(base);
-  const variantForms = variant
-    ? [
-        `${base} ${variant}`,
-        `${base} - ${variant}`,
-        `${base} – ${variant}`,
-        `${base} (${variant})`,
-      ].map(norm)
-    : [];
-
-  for (const raw of list) {
-    const v = norm(raw);
-    if (v === targetDisplay) return { ok: true, mode: "display" };
-    if (v === targetBase) return { ok: true, mode: "base" };
-    if (variant && variantForms.includes(v)) return { ok: true, mode: "variant" };
-  }
-  return { ok: false, mode: null };
-}
-
-function makeEntry(display, type) {
-  const { base, variant } = extractVariant(display);
+/** Build a pretty dropdown entry */
+function makeEntry(raw, type) {
+  const base = brandCanonicalize(getBase(raw));
   return {
-    display: display.trim(),
-    base: base.trim(),
-    variant,
     type,
-    tokens: tokensOf(display),
+    display: base, // we show only base in dropdown
+    baseNorm: toNorm(base),
   };
 }
 
-/** ---------- DEDUP HELPERS (by image+title+desc+link) ---------- */
 function normalizeUrl(u) {
   if (!u) return "";
   let s = String(u).trim().toLowerCase();
-  s = s.replace(/^https?:\/\//, "");
-  s = s.replace(/^www\./, "");
+  s = s.replace(/^https?:\/\//, "").replace(/^www\./, "");
   if (s.endsWith("/")) s = s.slice(0, -1);
   return s;
 }
 function normalizeText(s) {
-  return normalize(s || "");
+  return toNorm(s || "");
 }
 function offerKey(offer) {
   const image = normalizeUrl(firstField(offer, LIST_FIELDS.image) || "");
@@ -256,31 +153,43 @@ function offerKey(offer) {
   return `${title}||${desc}||${image}||${link}`;
 }
 
-/** wrappers look like: { offer, matchedVariant: boolean, site: string } */
-function dedupWrapperArray(arr, seen) {
+/** Dedup wrappers (keep first by priority) */
+function dedupWrappers(arr, seen) {
   const out = [];
   for (const w of arr || []) {
-    const key = offerKey(w.offer);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const k = offerKey(w.offer);
+    if (seen.has(k)) continue;
+    seen.add(k);
     out.push(w);
   }
   return out;
 }
 
+/** Disclaimer component */
+const Disclaimer = () => (
+  <section className="disclaimer">
+    <h3>Disclaimer</h3>
+    <p>
+      All offers, coupons, and discounts listed on our platform are provided for informational purposes only.
+      We do not guarantee the accuracy, availability, or validity of any offer. Users are advised to verify the
+      terms and conditions with the respective merchants before making any purchase. We are not responsible for any
+      discrepancies, expired offers, or losses arising from the use of these coupons.
+    </p>
+  </section>
+);
+
 /** -------------------- COMPONENT -------------------- */
 const AirlineOffers = () => {
-  // Entries for dropdown/search
+  // dropdown data
   const [creditEntries, setCreditEntries] = useState([]);
   const [debitEntries, setDebitEntries] = useState([]);
 
-  // UI states
+  // ui state
   const [filteredCards, setFilteredCards] = useState([]);
   const [query, setQuery] = useState("");
-  const [selectedCard, setSelectedCard] = useState("");
-  const [selectedEntry, setSelectedEntry] = useState(null);
-  const [isDebitCardSelected, setIsDebitCardSelected] = useState(false);
-  const [noOffersMessage, setNoOffersMessage] = useState(false);
+  const [selected, setSelected] = useState(null); // {type, display, baseNorm}
+  const [noMatches, setNoMatches] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // offers
   const [easeOffers, setEaseOffers] = useState([]);
@@ -293,33 +202,17 @@ const AirlineOffers = () => {
   const [goibiboOffers, setGoibiboOffers] = useState([]);
   const [permanentOffers, setPermanentOffers] = useState([]);
 
-  const buildGroupedList = (creditArr, debitArr, qTokens = []) => {
-    const out = [];
-    if (creditArr.length) {
-      out.push({ type: "heading", label: "Credit Cards" });
-      out.push(
-        ...creditArr.map((entry) => ({
-          type: "credit",
-          entry,
-          __html: highlightHtml(entry.base || entry.display, qTokens),
-        }))
-      );
-    }
-    if (debitArr.length) {
-      out.push({ type: "heading", label: "Debit Cards" });
-      out.push(
-        ...debitArr.map((entry) => ({
-          type: "debit",
-          entry,
-          __html: highlightHtml(entry.base || entry.display, qTokens),
-        }))
-      );
-    }
-    return out;
-  };
-
+  // responsive
   useEffect(() => {
-    const fetchCSVData = async () => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // load csvs + build dropdown sets (dedup by base)
+  useEffect(() => {
+    async function load() {
       try {
         const files = [
           { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
@@ -333,189 +226,212 @@ const AirlineOffers = () => {
           { name: "Updated_Permanent_Offers.csv", setter: setPermanentOffers },
         ];
 
-        const allCreditCards = new Set();
-        const allDebitCards = new Set();
+        const creditMap = new Map(); // baseNorm -> display (canonical)
+        const debitMap = new Map();
 
-        for (const file of files) {
-          const response = await axios.get(`/${file.name}`);
-          const parsed = Papa.parse(response.data, { header: true });
+        for (const f of files) {
+          const res = await axios.get(`/${f.name}`);
+          const parsed = Papa.parse(res.data, { header: true });
           const rows = parsed.data || [];
 
+          // collect names
           for (const row of rows) {
+            // credit lists
             const ccList = splitList(firstField(row, LIST_FIELDS.credit));
-            ccList.forEach((c) => allCreditCards.add(c));
-
-            const dcList = splitList(firstField(row, LIST_FIELDS.debit));
-            dcList.forEach((d) => allDebitCards.add(d));
-
+            for (const raw of ccList) {
+              const base = brandCanonicalize(getBase(raw));
+              const baseNorm = toNorm(base);
+              if (baseNorm) creditMap.set(baseNorm, creditMap.get(baseNorm) || base);
+            }
+            // permanent cc name
             const ccName = firstField(row, LIST_FIELDS.permanentCCName);
-            if (ccName) allCreditCards.add(String(ccName).trim());
+            if (ccName) {
+              const base = brandCanonicalize(getBase(ccName));
+              const baseNorm = toNorm(base);
+              if (baseNorm) creditMap.set(baseNorm, creditMap.get(baseNorm) || base);
+            }
+            // debit lists
+            const dcList = splitList(firstField(row, LIST_FIELDS.debit));
+            for (const raw of dcList) {
+              const base = brandCanonicalize(getBase(raw));
+              const baseNorm = toNorm(base);
+              if (baseNorm) debitMap.set(baseNorm, debitMap.get(baseNorm) || base);
+            }
           }
 
-          file.setter(rows);
+          f.setter(rows);
         }
 
-        const ccSorted = Array.from(allCreditCards).filter(Boolean).sort((a, b) => a.localeCompare(b));
-        const dcSorted = Array.from(allDebitCards).filter(Boolean).sort((a, b) => a.localeCompare(b));
+        // build entries
+        const credit = Array.from(creditMap.values())
+          .sort((a, b) => a.localeCompare(b))
+          .map((d) => makeEntry(d, "credit"));
+        const debit = Array.from(debitMap.values())
+          .sort((a, b) => a.localeCompare(b))
+          .map((d) => makeEntry(d, "debit"));
 
-        const creditEntriesBuilt = ccSorted.map((d) => makeEntry(d, "credit"));
-        const debitEntriesBuilt = dcSorted.map((d) => makeEntry(d, "debit"));
-        setCreditEntries(creditEntriesBuilt);
-        setDebitEntries(debitEntriesBuilt);
+        setCreditEntries(credit);
+        setDebitEntries(debit);
 
-        // IMPORTANT: no pre-populated dropdown when input is empty
-        setFilteredCards([]);
-      } catch (error) {
-        console.error("Error loading CSV data:", error);
+        // keep list ready, but dropdown will only render when query has text
+        setFilteredCards([
+          ...(credit.length ? [{ type: "heading", label: "Credit Cards" }] : []),
+          ...credit,
+          ...(debit.length ? [{ type: "heading", label: "Debit Cards" }] : []),
+          ...debit,
+        ]);
+      } catch (e) {
+        console.error("CSV load error:", e);
       }
-    };
-
-    fetchCSVData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+    load();
   }, []);
 
-  const rankAndFilter = (entries, qTokens) => {
-    if (!qTokens.length) return [];
-    const scored = entries
-      .map((e) => ({ e, s: scoreEntry(e, qTokens) }))
-      .filter(({ s }) => s > 0)
-      .sort((a, b) => (b.s - a.s) || a.e.display.localeCompare(b.e.display))
-      .slice(0, MAX_SUGGESTIONS)
-      .map(({ e }) => e);
-    return scored;
-  };
+  /** search box */
+  const onChangeQuery = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    setNoMatches(false);
 
-  const handleInputChange = (event) => {
-    const value = event.target.value;
-    setQuery(value);
-
-    // If input is empty → clear dropdown and previously shown offers
-    if (!value.trim()) {
-      setFilteredCards([]);
-      setNoOffersMessage(false);
-      setSelectedCard("");
-      setSelectedEntry(null);
-      setIsDebitCardSelected(false);
-      return; // <— stop here so nothing shows
+    // ---- CHANGE #1: when input is empty -> hide dropdown AND clear previous offers ----
+    if (!val.trim()) {
+      setFilteredCards([]);   // no dropdown
+      setSelected(null);      // clear previously selected card -> no offers shown
+      return;
     }
+    // -----------------------------------------------------------------------------------
 
-    const qTokens = tokensOf(value);
-    const rankedCredit = rankAndFilter(creditEntries, qTokens);
-    const rankedDebit = rankAndFilter(debitEntries, qTokens);
+    const scored = (arr) =>
+      arr
+        .map((it) => ({ it, s: scoreCandidate(val, it.display) }))
+        .filter(({ s }) => s > 0.3)
+        .sort((a, b) => (b.s - a.s) || a.it.display.localeCompare(b.it.display))
+        .slice(0, MAX_SUGGESTIONS)
+        .map(({ it }) => it);
 
-    const combined = buildGroupedList(rankedCredit, rankedDebit, qTokens);
-    setFilteredCards(combined);
-
-    if (!rankedCredit.length && !rankedDebit.length) {
-      setNoOffersMessage(true);
-      setSelectedCard("");
-      setSelectedEntry(null);
-    } else {
-      setNoOffersMessage(false);
-    }
-  };
-
-  const handleCardSelection = (entry, type) => {
-    setSelectedCard(entry.display);        // keep full text for matching
-    setSelectedEntry(entry);
-    setQuery(entry.base || entry.display); // show only base in textbox
-    setFilteredCards([]);                  // close dropdown
-    setNoOffersMessage(false);
-    setIsDebitCardSelected(type === "debit");
-  };
-
-  /** Returns wrappers: { offer, matchedVariant: boolean, site: string } */
-  const getOffersForSelectedCard = (offers, isDebit = false, isPermanent = false, siteName = "") => {
-    if (!selectedEntry) return [];
-    const { display, base, variant } = selectedEntry;
+    const cc = scored(creditEntries);
+    const dc = scored(debitEntries);
 
     const out = [];
-    for (const offer of (offers || [])) {
-      if (isPermanent) {
-        const ccName = firstField(offer, LIST_FIELDS.permanentCCName);
-        if (!ccName) continue;
-        const { ok, mode } = whichMatch([ccName], display, base, variant);
-        if (!ok) continue;
-        out.push({ offer, matchedVariant: mode === "variant", site: siteName });
-        continue;
-      }
+    if (cc.length) {
+      out.push({ type: "heading", label: "Credit Cards" }, ...cc);
+    }
+    if (dc.length) {
+      out.push({ type: "heading", label: "Debit Cards" }, ...dc);
+    }
+    setFilteredCards(out);
+    if (!cc.length && !dc.length) setNoMatches(true);
+  };
 
-      const list = splitList(firstField(offer, isDebit ? LIST_FIELDS.debit : LIST_FIELDS.credit));
-      const { ok, mode } = whichMatch(list, display, base, variant);
-      if (!ok) continue;
-      out.push({ offer, matchedVariant: mode === "variant", site: siteName });
+  const onPick = (entry) => {
+    setSelected(entry);
+    setQuery(entry.display);
+    setFilteredCards([]);
+  };
+
+  /** Build matches for one CSV: return wrappers {offer, site, variantText} */
+  function matchesFor(offers, type, site) {
+    if (!selected) return [];
+    const out = [];
+    for (const o of offers || []) {
+      let list = [];
+      if (type === "permanent") {
+        const nm = firstField(o, LIST_FIELDS.permanentCCName);
+        if (nm) list = [nm];
+      } else if (type === "debit") {
+        list = splitList(firstField(o, LIST_FIELDS.debit));
+      } else {
+        list = splitList(firstField(o, LIST_FIELDS.credit));
+      }
+      let matched = false;
+      let matchedVariant = "";
+      for (const raw of list) {
+        const base = brandCanonicalize(getBase(raw));
+        if (toNorm(base) === selected.baseNorm) {
+          matched = true;
+          const v = getVariant(raw);
+          if (v) matchedVariant = v; // only parentheses variant
+          break;
+        }
+      }
+      if (matched) {
+        out.push({ offer: o, site, variantText: matchedVariant });
+      }
     }
     return out;
-  };
+  }
 
-  // Build selections
-  const sEase      = getOffersForSelectedCard(easeOffers, isDebitCardSelected, false, "EaseMyTrip");
-  const sYatraDom  = getOffersForSelectedCard(yatraDomesticOffers, isDebitCardSelected, false, "Yatra (Domestic)");
-  const sYatraInt  = getOffersForSelectedCard(yatraInternationalOffers, isDebitCardSelected, false, "Yatra (International)");
-  const sIxigo     = getOffersForSelectedCard(ixigoOffers, isDebitCardSelected, false, "Ixigo");
-  const sAirline   = getOffersForSelectedCard(airlineOffers, isDebitCardSelected, false, "Airline");
-  const sMMT       = getOffersForSelectedCard(makeMyTripOffers, isDebitCardSelected, false, "MakeMyTrip");
-  const sClearTrip = getOffersForSelectedCard(clearTripOffers, isDebitCardSelected, false, "ClearTrip");
-  const sGoibibo   = getOffersForSelectedCard(goibiboOffers, isDebitCardSelected, false, "Goibibo");
-  const sPermanent = getOffersForSelectedCard(permanentOffers, false, true, "Permanent");
+  // Collect then global-dedup by priority
+  const wPermanent = matchesFor(permanentOffers, "permanent", "Permanent");
+  const wAirline = matchesFor(airlineOffers, selected?.type === "debit" ? "debit" : "credit", "Airline");
+  const wGoibibo = matchesFor(goibiboOffers, selected?.type === "debit" ? "debit" : "credit", "Goibibo");
+  const wEase = matchesFor(easeOffers, selected?.type === "debit" ? "debit" : "credit", "EaseMyTrip");
+  const wYDom = matchesFor(yatraDomesticOffers, selected?.type === "debit" ? "debit" : "credit", "Yatra (Domestic)");
+  const wYInt = matchesFor(yatraInternationalOffers, selected?.type === "debit" ? "debit" : "credit", "Yatra (International)");
+  const wIxigo = matchesFor(ixigoOffers, selected?.type === "debit" ? "debit" : "credit", "Ixigo");
+  const wMMT = matchesFor(makeMyTripOffers, selected?.type === "debit" ? "debit" : "credit", "MakeMyTrip");
+  const wCT = matchesFor(clearTripOffers, selected?.type === "debit" ? "debit" : "credit", "ClearTrip");
 
-  // global de-dupe (keep first by this priority)
-  const seenKeys = new Set();
-  const dPermanent = !isDebitCardSelected ? dedupWrapperArray(sPermanent, seenKeys) : [];
-  const dAirline   = dedupWrapperArray(sAirline, seenKeys);
-  const dGoibibo   = dedupWrapperArray(sGoibibo, seenKeys);
-  const dEase      = dedupWrapperArray(sEase, seenKeys);
-  const dYatraDom  = dedupWrapperArray(sYatraDom, seenKeys);
-  const dYatraInt  = dedupWrapperArray(sYatraInt, seenKeys);
-  const dIxigo     = dedupWrapperArray(sIxigo, seenKeys);
-  const dMMT       = dedupWrapperArray(sMMT, seenKeys);
-  const dClearTrip = dedupWrapperArray(sClearTrip, seenKeys);
+  const seen = new Set();
+  const dPermanent = selected?.type === "credit" ? dedupWrappers(wPermanent, seen) : []; // permanent for credit only
+  const dAirline = dedupWrappers(wAirline, seen);
+  const dGoibibo = dedupWrappers(wGoibibo, seen);
+  const dEase = dedupWrappers(wEase, seen);
+  const dYDom = dedupWrappers(wYDom, seen);
+  const dYInt = dedupWrappers(wYInt, seen);
+  const dIxigo = dedupWrappers(wIxigo, seen);
+  const dMMT = dedupWrappers(wMMT, seen);
+  const dCT = dedupWrappers(wCT, seen);
 
-  const hasAnyOffers =
-    dPermanent.length > 0 ||
-    dAirline.length > 0 ||
-    dGoibibo.length > 0 ||
-    dEase.length > 0 ||
-    dYatraDom.length > 0 ||
-    dYatraInt.length > 0 ||
-    dIxigo.length > 0 ||
-    dMMT.length > 0 ||
-    dClearTrip.length > 0;
+  const hasAny =
+    dPermanent.length ||
+    dAirline.length ||
+    dGoibibo.length ||
+    dEase.length ||
+    dYDom.length ||
+    dYInt.length ||
+    dIxigo.length ||
+    dMMT.length ||
+    dCT.length;
 
-  const showScrollButton = hasAnyOffers;
+  /** Offer card UI */
+  const OfferCard = ({ wrapper, isPermanent }) => {
+    const o = wrapper.offer;
+    const title = firstField(o, LIST_FIELDS.title) || o.Website || "Offer";
+    const image = firstField(o, LIST_FIELDS.image);
+    const desc = firstField(o, LIST_FIELDS.desc);
+    const link = firstField(o, LIST_FIELDS.link);
 
-  const handleScrollDown = () => {
-    window.scrollBy({ top: window.innerHeight, behavior: "smooth" });
-  };
+    const showVariantNote =
+      VARIANT_NOTE_SITES.has(wrapper.site) && wrapper.variantText && wrapper.variantText.trim().length > 0;
 
-  // Offer card
-  const OfferCard = ({ offer, showVariantNote, variantText, isPermanentCard = false }) => {
-    const image = firstField(offer, LIST_FIELDS.image);
-    const title = firstField(offer, LIST_FIELDS.title) || offer.Website || "Offer";
-    const desc  = firstField(offer, LIST_FIELDS.desc);
-    const link  = firstField(offer, LIST_FIELDS.link);
+    const permanentBenefit = isPermanent ? firstField(o, LIST_FIELDS.permanentBenefit) : "";
 
     return (
       <div className="offer-card">
         {image && <img src={image} alt={title} />}
         <div className="offer-info">
-          <h3>{title}</h3>
-          {desc && <p>{desc}</p>}
+          <h3 className="offer-title">{title}</h3>
 
-          {showVariantNote && variantText && (
-            <div style={{ margin: "6px 0 10px", fontSize: 14 }}>
-              <strong>Note:</strong> This benefit is applicable only on <em>{variantText}</em> variant
-            </div>
+          {/* Description body (hotel-style layout/serif) */}
+          {isPermanent ? (
+            <>
+              {permanentBenefit && <p className="offer-desc">{permanentBenefit}</p>}
+              <p className="inbuilt-note"><strong>This is a inbuilt feature of this credit card</strong></p>
+            </>
+          ) : (
+            desc && <p className="offer-desc">{desc}</p>
           )}
 
-          {isPermanentCard && (
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>
-              This is a inbuilt feature of this credit card
-            </div>
+          {/* Per-card variant note (red) above the CTA */}
+          {showVariantNote && (
+            <p className="network-note">
+              <strong>Note:</strong> This benefit is applicable only on <em>{wrapper.variantText}</em> variant
+            </p>
           )}
 
           {link && (
-            <button onClick={() => window.open(link, "_blank")}>
+            <button className="btn" onClick={() => window.open(link, "_blank")}>
               View Offer
             </button>
           )}
@@ -524,236 +440,216 @@ const AirlineOffers = () => {
     );
   };
 
-  // Centered section title (like your screenshot)
-  const Section = ({ title, children }) => (
-    <div style={{ margin: "28px auto 18px", maxWidth: 1200 }}>
-      <h2
-        style={{
-          textAlign: "center",
-          fontSize: "42px",
-          margin: "0 0 18px 0",
-          fontWeight: 700,
-        }}
-      >
-        {title}
-      </h2>
-      <div className="offer-grid">{children}</div>
-    </div>
-  );
-
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
-      {/* Search */}
-      <div className="dropdown" style={{ position: "relative", width: "600px", margin: "24px auto 8px" }}>
+      {/* Search / dropdown */}
+      <div className="dropdown" style={{ position: "relative", width: "600px", margin: "20px auto" }}>
         <input
           type="text"
           value={query}
-          onChange={handleInputChange}
+          onChange={onChangeQuery}
           placeholder="Type a Credit or Debit Card..."
+          className="dropdown-input"
           style={{
             width: "100%",
             padding: "12px",
             fontSize: "16px",
-            border: "1px solid #ccc",
-            borderRadius: "5px",
+            border: `1px solid ${noMatches ? "#d32f2f" : "#ccc"}`,
+            borderRadius: "6px",
           }}
         />
-
-        {/* Dropdown only if user typed AND we have results */}
-        {query.trim() && filteredCards.length > 0 && (
+        {/* ---- CHANGE #2: show dropdown only when there is input AND results ---- */}
+        {query.trim() && !!filteredCards.length && (
           <ul
+            className="dropdown-list"
             style={{
-              listStyleType: "none",
+              listStyle: "none",
               padding: "10px",
               margin: 0,
               width: "100%",
-              maxHeight: "240px",
+              maxHeight: "260px",
               overflowY: "auto",
               border: "1px solid #ccc",
-              borderRadius: "5px",
+              borderRadius: "6px",
               backgroundColor: "#fff",
               position: "absolute",
               zIndex: 1000,
             }}
           >
-            {filteredCards.map((item, index) =>
+            {filteredCards.map((item, idx) =>
               item.type === "heading" ? (
-                <li key={`h-${index}`} style={{ padding: "10px", fontWeight: "bold", background: "#fafafa" }}>
+                <li key={`h-${idx}`} style={{ padding: "8px 10px", fontWeight: 700, background: "#fafafa" }}>
                   {item.label}
                 </li>
               ) : (
                 <li
-                  key={`i-${index}-${item.entry.display}`}
-                  onClick={() => handleCardSelection(item.entry, item.type)}
+                  key={`i-${idx}-${item.display}`}
+                  onClick={() => onPick(item)}
                   style={{
                     padding: "10px",
                     cursor: "pointer",
-                    borderBottom: index !== filteredCards.length - 1 ? "1px solid #eee" : "none",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
+                    borderBottom: "1px solid #f2f2f2",
                   }}
-                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#f5f7fb")}
-                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  onMouseOver={(e) => (e.currentTarget.style.background = "#f7f9ff")}
+                  onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
                 >
-                  <span dangerouslySetInnerHTML={item.__html} />
+                  {item.display}
                 </li>
               )
             )}
           </ul>
         )}
+        {/* --------------------------------------------------------------------- */}
       </div>
 
-      {noOffersMessage && query.trim() && (
-        <p style={{ color: "red", textAlign: "center", marginTop: "10px" }}>
-          No matching cards found. Try including part of the card name.
+      {noMatches && (
+        <p style={{ color: "#d32f2f", textAlign: "center", marginTop: 8 }}>
+          No matching cards found. Please try a different name.
         </p>
       )}
 
-      {/* Offers */}
-      {selectedCard && hasAnyOffers && (
-        <div className="offers-section" style={{ maxWidth: "1200px", margin: "0 auto", padding: "8px 20px 24px" }}>
-          {!isDebitCardSelected && dPermanent.length > 0 && (
-            <Section title="Permanent Offers">
-              {dPermanent.map((w, idx) => (
-                <OfferCard
-                  key={`perm-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                  isPermanentCard
-                />
-              ))}
-            </Section>
+      {/* Offers by section */}
+      {selected && hasAny && (
+        <div className="offers-section" style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}>
+          {!!dPermanent.length && (
+            <div className="offer-group">
+              {/* ---- CHANGE #3: center section titles ---- */}
+              <h2 style={{ textAlign: "center" }}>Permanent Offers</h2>
+              <div className="offer-grid">
+                {dPermanent.map((w, i) => (
+                  <OfferCard key={`perm-${i}`} wrapper={w} isPermanent />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dAirline.length > 0 && (
-            <Section title="Airline Offers">
-              {dAirline.map((w, idx) => (
-                <OfferCard
-                  key={`air-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dAirline.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Airline Offers</h2>
+              <div className="offer-grid">
+                {dAirline.map((w, i) => (
+                  <OfferCard key={`air-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dGoibibo.length > 0 && (
-            <Section title="Goibibo Offers">
-              {dGoibibo.map((w, idx) => (
-                <OfferCard
-                  key={`go-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dGoibibo.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on Goibibo</h2>
+              <div className="offer-grid">
+                {dGoibibo.map((w, i) => (
+                  <OfferCard key={`go-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dEase.length > 0 && (
-            <Section title="EaseMyTrip Offers">
-              {dEase.map((w, idx) => (
-                <OfferCard
-                  key={`emt-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dEase.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on EaseMyTrip</h2>
+              <div className="offer-grid">
+                {dEase.map((w, i) => (
+                  <OfferCard key={`emt-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dYatraDom.length > 0 && (
-            <Section title="Yatra (Domestic) Offers">
-              {dYatraDom.map((w, idx) => (
-                <OfferCard
-                  key={`y-dom-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dYDom.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on Yatra (Domestic)</h2>
+              <div className="offer-grid">
+                {dYDom.map((w, i) => (
+                  <OfferCard key={`yd-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dYatraInt.length > 0 && (
-            <Section title="Yatra (International) Offers">
-              {dYatraInt.map((w, idx) => (
-                <OfferCard
-                  key={`y-int-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dYInt.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on Yatra (International)</h2>
+              <div className="offer-grid">
+                {dYInt.map((w, i) => (
+                  <OfferCard key={`yi-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dIxigo.length > 0 && (
-            <Section title="Ixigo Offers">
-              {dIxigo.map((w, idx) => (
-                <OfferCard
-                  key={`ix-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dIxigo.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on Ixigo</h2>
+              <div className="offer-grid">
+                {dIxigo.map((w, i) => (
+                  <OfferCard key={`ix-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dMMT.length > 0 && (
-            <Section title="MakeMyTrip Offers">
-              {dMMT.map((w, idx) => (
-                <OfferCard
-                  key={`mmt-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dMMT.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on MakeMyTrip</h2>
+              <div className="offer-grid">
+                {dMMT.map((w, i) => (
+                  <OfferCard key={`mmt-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
 
-          {dClearTrip.length > 0 && (
-            <Section title="ClearTrip Offers">
-              {dClearTrip.map((w, idx) => (
-                <OfferCard
-                  key={`ct-${idx}`}
-                  offer={w.offer}
-                  showVariantNote={w.matchedVariant && SHOW_VARIANT_NOTE_SITES.has(w.site)}
-                  variantText={selectedEntry?.variant}
-                />
-              ))}
-            </Section>
+          {!!dCT.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on ClearTrip</h2>
+              <div className="offer-grid">
+                {dCT.map((w, i) => (
+                  <OfferCard key={`ct-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      {showScrollButton && (
+      {/* “No offers” message */}
+      {selected && !hasAny && (
+        <p style={{ color: "#d32f2f", textAlign: "center", marginTop: 10 }}>
+          No offers found for {selected.display}
+        </p>
+      )}
+
+      {/* Scroll button */}
+      {selected && hasAny && (
         <button
-          onClick={handleScrollDown}
+          onClick={() => window.scrollBy({ top: window.innerHeight, behavior: "smooth" })}
           style={{
             position: "fixed",
-            right: "20px",
-            bottom: "150px",
-            padding: "10px 15px",
+            right: 20,
+            bottom: isMobile ? 20 : 150,
+            padding: isMobile ? "12px 15px" : "10px 20px",
             backgroundColor: "#1e7145",
             color: "white",
             border: "none",
-            borderRadius: "8px",
+            borderRadius: isMobile ? "50%" : 8,
             cursor: "pointer",
-            fontSize: "16px",
+            fontSize: 18,
             zIndex: 1000,
             boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
+            width: isMobile ? 50 : 140,
+            height: isMobile ? 50 : 50,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
           }}
         >
-          Scroll Down
+          {isMobile ? "↓" : "Scroll Down"}
         </button>
       )}
+
+      {/* Centered disclaimer (screenshot style) */}
+      <Disclaimer />
     </div>
   );
 };
