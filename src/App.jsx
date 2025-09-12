@@ -91,7 +91,7 @@ function brandCanonicalize(text) {
   return s;
 }
 
-/** Levenshtein distance (for fuzzy ranking) */
+/** Levenshtein distance (kept for compatibility) */
 function lev(a, b) {
   a = toNorm(a);
   b = toNorm(b);
@@ -180,7 +180,7 @@ const Disclaimer = () => (
 
 /** -------------------- COMPONENT -------------------- */
 const AirlineOffers = () => {
-  // dropdown data
+  // dropdown data (from allCards.csv ONLY)
   const [creditEntries, setCreditEntries] = useState([]);
   const [debitEntries, setDebitEntries] = useState([]);
 
@@ -210,61 +210,32 @@ const AirlineOffers = () => {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // load csvs + build dropdown sets (dedup by base)
+  // 1) Load allCards.csv for dropdown lists ONLY
   useEffect(() => {
-    async function load() {
+    async function loadAllCards() {
       try {
-        const files = [
-          { name: "easeMyTrip.csv", setter: setEaseOffers },
-          { name: "yatraDomestic.csv", setter: setYatraDomesticOffers },
-          { name: "yatraInternational.csv", setter: setYatraInternationalOffers },
-          { name: "ixigo.csv", setter: setIxigoOffers },
-          
-          { name: "makemytrip.csv", setter: setMakeMyTripOffers },
-          { name: "cleartrip.csv", setter: setClearTripOffers },
-          { name: "goibibo.csv", setter: setGoibiboOffers },
-          { name: "permanent.csv", setter: setPermanentOffers },
-        ];
+        const res = await axios.get(`/allCards.csv`);
+        const parsed = Papa.parse(res.data, { header: true });
+        const rows = parsed.data || [];
 
         const creditMap = new Map(); // baseNorm -> display (canonical)
         const debitMap = new Map();
 
-        for (const f of files) {
-          const res = await axios.get(`/${encodeURIComponent(f.name)}`);
-
-
-          const parsed = Papa.parse(res.data, { header: true });
-          const rows = parsed.data || [];
-
-          // collect names
-          for (const row of rows) {
-            // credit lists
-            const ccList = splitList(firstField(row, LIST_FIELDS.credit));
-            for (const raw of ccList) {
-              const base = brandCanonicalize(getBase(raw));
-              const baseNorm = toNorm(base);
-              if (baseNorm) creditMap.set(baseNorm, creditMap.get(baseNorm) || base);
-            }
-            // permanent cc name
-            const ccName = firstField(row, LIST_FIELDS.permanentCCName);
-            if (ccName) {
-              const base = brandCanonicalize(getBase(ccName));
-              const baseNorm = toNorm(base);
-              if (baseNorm) creditMap.set(baseNorm, creditMap.get(baseNorm) || base);
-            }
-            // debit lists
-            const dcList = splitList(firstField(row, LIST_FIELDS.debit));
-            for (const raw of dcList) {
-              const base = brandCanonicalize(getBase(raw));
-              const baseNorm = toNorm(base);
-              if (baseNorm) debitMap.set(baseNorm, debitMap.get(baseNorm) || base);
-            }
+        for (const row of rows) {
+          const ccList = splitList(firstField(row, LIST_FIELDS.credit));
+          for (const raw of ccList) {
+            const base = brandCanonicalize(getBase(raw));
+            const baseNorm = toNorm(base);
+            if (baseNorm) creditMap.set(baseNorm, creditMap.get(baseNorm) || base);
           }
-
-          f.setter(rows);
+          const dcList = splitList(firstField(row, LIST_FIELDS.debit));
+          for (const raw of dcList) {
+            const base = brandCanonicalize(getBase(raw));
+            const baseNorm = toNorm(base);
+            if (baseNorm) debitMap.set(baseNorm, debitMap.get(baseNorm) || base);
+          }
         }
 
-        // build entries
         const credit = Array.from(creditMap.values())
           .sort((a, b) => a.localeCompare(b))
           .map((d) => makeEntry(d, "credit"));
@@ -275,60 +246,113 @@ const AirlineOffers = () => {
         setCreditEntries(credit);
         setDebitEntries(debit);
 
-        // keep list ready, but dropdown will only render when query has text
+        // Pre-compose full list (not displayed until query has text)
         setFilteredCards([
           ...(credit.length ? [{ type: "heading", label: "Credit Cards" }] : []),
           ...credit,
           ...(debit.length ? [{ type: "heading", label: "Debit Cards" }] : []),
           ...debit,
         ]);
+
+        // if allCards is actually empty, enable "noMatches"
+        if (!credit.length && !debit.length) {
+          setNoMatches(true);
+          setSelected(null);
+        }
       } catch (e) {
-        console.error("CSV load error:", e);
+        console.error("allCards.csv load error:", e);
+        // On load failure, show no-matches and clear selection to hide offers
+        setNoMatches(true);
+        setSelected(null);
       }
     }
-    load();
+    loadAllCards();
+  }, []);
+
+  // 2) Load all offer CSVs (unchanged display logic)
+  useEffect(() => {
+    async function loadOffers() {
+      try {
+        const files = [
+          { name: "easeMyTrip.csv", setter: setEaseOffers },
+          { name: "yatraDomestic.csv", setter: setYatraDomesticOffers },
+          { name: "yatraInternational.csv", setter: setYatraInternationalOffers },
+          { name: "ixigo.csv", setter: setIxigoOffers },
+          { name: "airline.csv", setter: setAirlineOffers },
+          { name: "makemytrip.csv", setter: setMakeMyTripOffers },
+          { name: "cleartrip.csv", setter: setClearTripOffers },
+          { name: "goibibo.csv", setter: setGoibiboOffers },
+          { name: "permanent.csv", setter: setPermanentOffers },
+        ];
+
+        await Promise.all(
+          files.map(async (f) => {
+            const res = await axios.get(`/${encodeURIComponent(f.name)}`);
+            const parsed = Papa.parse(res.data, { header: true });
+            f.setter(parsed.data || []);
+          })
+        );
+      } catch (e) {
+        console.error("Offer CSV load error:", e);
+      }
+    }
+    loadOffers();
   }, []);
 
   /** search box */
-  const onChangeQuery = (e) => {
-    const val = e.target.value;
-    setQuery(val);
+const onChangeQuery = (e) => {
+  const val = e.target.value;
+  setQuery(val);
+
+  // Empty input → close dropdown + clear selection + clear errors
+  if (!val.trim()) {
+    setFilteredCards([]);
+    setSelected(null);
     setNoMatches(false);
+    return;
+  }
 
-    // ---- CHANGE #1: when input is empty -> hide dropdown AND clear previous offers ----
-    if (!val.trim()) {
-      setFilteredCards([]);   // no dropdown
-      setSelected(null);      // clear previously selected card -> no offers shown
-      return;
-    }
-    // -----------------------------------------------------------------------------------
+  const q = val.trim().toLowerCase();
+  const scored = (arr) =>
+    arr
+      .map((it) => {
+        const s = scoreCandidate(val, it.display);
+        const inc = it.display.toLowerCase().includes(q); // ← substring match so typing "v" shows all with "v"
+        return { it, s, inc };
+      })
+      .filter(({ s, inc }) => inc || s > 0.3) // ← fuzzy OR substring fallback
+      .sort((a, b) => (b.s - a.s) || a.it.display.localeCompare(b.it.display))
+      .slice(0, MAX_SUGGESTIONS)
+      .map(({ it }) => it);
 
-    const scored = (arr) =>
-      arr
-        .map((it) => ({ it, s: scoreCandidate(val, it.display) }))
-        .filter(({ s }) => s > 0.3)
-        .sort((a, b) => (b.s - a.s) || a.it.display.localeCompare(b.it.display))
-        .slice(0, MAX_SUGGESTIONS)
-        .map(({ it }) => it);
+  const cc = scored(creditEntries);
+  const dc = scored(debitEntries);
 
-    const cc = scored(creditEntries);
-    const dc = scored(debitEntries);
+  if (!cc.length && !dc.length) {
+    // ❌ No matches: show error, close dropdown, and clear previous offers
+    setNoMatches(true);
+    setSelected(null);
+    setFilteredCards([]); // close dropdown
+    return;
+  }
 
-    const out = [];
-    if (cc.length) {
-      out.push({ type: "heading", label: "Credit Cards" }, ...cc);
-    }
-    if (dc.length) {
-      out.push({ type: "heading", label: "Debit Cards" }, ...dc);
-    }
-    setFilteredCards(out);
-    if (!cc.length && !dc.length) setNoMatches(true);
-  };
+  setNoMatches(false);
+  setFilteredCards([
+    ...(cc.length ? [{ type: "heading", label: "Credit Cards" }] : []),
+    ...cc,
+    ...(dc.length ? [{ type: "heading", label: "Debit Cards" }] : []),
+    ...dc,
+  ]);
+};
+
+
+
 
   const onPick = (entry) => {
     setSelected(entry);
     setQuery(entry.display);
     setFilteredCards([]);
+    setNoMatches(false); // picking a valid card clears noMatches
   };
 
   /** Build matches for one CSV: return wrappers {offer, site, variantText} */
@@ -345,14 +369,15 @@ const AirlineOffers = () => {
       } else {
         list = splitList(firstField(o, LIST_FIELDS.credit));
       }
+
       let matched = false;
       let matchedVariant = "";
       for (const raw of list) {
-        const base = brandCanonicalize(getBase(raw));
+        const base = brandCanonicalize(getBase(raw)); // ✅ base-name only
         if (toNorm(base) === selected.baseNorm) {
           matched = true;
-          const v = getVariant(raw);
-          if (v) matchedVariant = v; // only parentheses variant
+          const v = getVariant(raw); // capture variant for red note
+          if (v) matchedVariant = v;
           break;
         }
       }
@@ -385,16 +410,18 @@ const AirlineOffers = () => {
   const dMMT = dedupWrappers(wMMT, seen);
   const dCT = dedupWrappers(wCT, seen);
 
-  const hasAny =
-    dPermanent.length ||
-    dAirline.length ||
-    dGoibibo.length ||
-    dEase.length ||
-    dYDom.length ||
-    dYInt.length ||
-    dIxigo.length ||
-    dMMT.length ||
-    dCT.length;
+  const hasAny = Boolean(
+  dPermanent.length ||
+  dAirline.length ||
+  dGoibibo.length ||
+  dEase.length ||
+  dYDom.length ||
+  dYInt.length ||
+  dIxigo.length ||
+  dMMT.length ||
+  dCT.length
+);
+
 
   /** Offer card UI */
   const OfferCard = ({ wrapper, isPermanent }) => {
@@ -460,7 +487,7 @@ const AirlineOffers = () => {
             borderRadius: "6px",
           }}
         />
-        {/* ---- CHANGE #2: show dropdown only when there is input AND results ---- */}
+        {/* show dropdown only when there is input AND results */}
         {query.trim() && !!filteredCards.length && (
           <ul
             className="dropdown-list"
@@ -501,21 +528,20 @@ const AirlineOffers = () => {
             )}
           </ul>
         )}
-        {/* --------------------------------------------------------------------- */}
       </div>
 
-      {noMatches && (
+      {/* When there are genuinely no dropdown entries available */}
+      {noMatches && query.trim() && (
         <p style={{ color: "#d32f2f", textAlign: "center", marginTop: 8 }}>
           No matching cards found. Please try a different name.
         </p>
       )}
 
-      {/* Offers by section */}
-      {selected && hasAny && (
+      {/* Offers by section (never shown when noMatches) */}
+      {selected && hasAny && !noMatches && (
         <div className="offers-section" style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}>
           {!!dPermanent.length && (
             <div className="offer-group">
-              {/* ---- CHANGE #3: center section titles ---- */}
               <h2 style={{ textAlign: "center" }}>Permanent Offers</h2>
               <div className="offer-grid">
                 {dPermanent.map((w, i) => (
@@ -615,15 +641,15 @@ const AirlineOffers = () => {
         </div>
       )}
 
-      {/* “No offers” message */}
-      {selected && !hasAny && (
+      {/* “No offers” message (exact text) — only when not in noMatches mode */}
+      {selected && !hasAny && !noMatches && (
         <p style={{ color: "#d32f2f", textAlign: "center", marginTop: 10 }}>
-          No offers found for {selected.display}
+          No offer available for this card
         </p>
       )}
 
-      {/* Scroll button */}
-      {selected && hasAny && (
+      {/* Scroll button (hidden when noMatches) */}
+      {selected && hasAny && !noMatches && (
         <button
           onClick={() => window.scrollBy({ top: window.innerHeight, behavior: "smooth" })}
           style={{
