@@ -3,252 +3,482 @@ import axios from "axios";
 import Papa from "papaparse";
 import "./App.css";
 
+/** -------------------- CONFIG -------------------- */
+const LIST_FIELDS = {
+  credit: ["Eligible Credit Cards", "Eligible Cards"],
+  debit: ["Eligible Debit Cards", "Applicable Debit Cards"],
+  title: ["Offer Title", "Title"],
+  image: ["Image", "Credit Card Image"],
+  link: ["Link"],
+  desc: ["Description", "Details", "Offer Description", "Flight Benefit"],
+  permanentCCName: ["Credit Card Name"],
+  permanentBenefit: ["Flight Benefit", "Benefit", "Offer"],
+};
+
+const MAX_SUGGESTIONS = 50;
+
+/** Show the red note for all 7 OTA sections */
+const SHOW_VARIANT_NOTE_SITES = new Set([
+  "EaseMyTrip",
+  "Yatra (Domestic)",
+  "Yatra (International)",
+  "Ixigo",
+  "MakeMyTrip",
+  "ClearTrip",
+  "Goibibo",
+]);
+
+/** -------------------- HELPERS (mirrors hotel code rules) -------------------- */
+function firstField(obj, keys) {
+  for (const k of keys) {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, k)) {
+      const v = obj[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+    }
+  }
+  return undefined;
+}
+function splitList(val) {
+  if (!val) return [];
+  return String(val)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+function normalize(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Canonical casing for common brands so
+ *  “Makemytrip …” and “MakeMyTrip …” collapse into one dropdown entry. */
+function canonicalBrandCase(str) {
+  return String(str)
+    .replace(/makemytrip/gi, "MakeMyTrip")
+    .replace(/\bcleartrip\b/gi, "ClearTrip")
+    .replace(/\beasemytrip\b/gi, "EaseMyTrip")
+    .replace(/\bgoibibo\b/gi, "Goibibo")
+    .replace(/\byatra\b/gi, "Yatra")
+    .replace(/\bicici\b/gi, "ICICI")
+    .replace(/\bhdfc\b/gi, "HDFC")
+    .replace(/\bsbi\b/gi, "SBI")
+    .replace(/\baxis\b/gi, "Axis")
+    .replace(/\bkotak\b/gi, "Kotak");
+}
+
+/** STRICT hotel-like rules:
+ * variant = ONLY text inside a trailing (...) at the END of the card string.
+ * base    = the name with that trailing (...) removed.
+ */
+function getBaseCardName(name) {
+  if (!name) return "";
+  return String(name).replace(/\s*\([^)]*\)\s*$/, "").trim();
+}
+function getNetworkVariant(name) {
+  if (!name) return "";
+  const m = String(name).match(/\(([^)]+)\)\s*$/);
+  return m ? m[1].trim() : "";
+}
+
+/** Canonical key used for matching (base only, case/space-insensitive) */
+function canonicalKey(name) {
+  return normalize(getBaseCardName(name)).replace(/\s+/g, "");
+}
+
+/** --- Offer dedup key (image + title + desc + link) --- */
+function normalizeUrl(u) {
+  if (!u) return "";
+  let s = String(u).trim().toLowerCase();
+  s = s.replace(/^https?:\/\//, "").replace(/^www\./, "");
+  if (s.endsWith("/")) s = s.slice(0, -1);
+  return s;
+}
+function normalizeText(s) { return normalize(s || ""); }
+function offerKey(offer) {
+  const image = normalizeUrl(firstField(offer, LIST_FIELDS.image) || "");
+  const title = normalizeText(firstField(offer, LIST_FIELDS.title) || offer.Website || "");
+  const desc  = normalizeText(firstField(offer, LIST_FIELDS.desc) || "");
+  const link  = normalizeUrl(firstField(offer, LIST_FIELDS.link) || "");
+  return `${title}||${desc}||${image}||${link}`;
+}
+function dedupWrapperArray(arr, seen) {
+  const out = [];
+  for (const w of arr || []) {
+    const key = offerKey(w.offer);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(w);
+  }
+  return out;
+}
+
+/** -------------------- DROPDOWN RANKING -------------------- */
+function tokensOf(str) { return normalize(str).split(" ").filter(Boolean); }
+function levenshtein(a, b) {
+  a = normalize(a); b = normalize(b);
+  const al = a.length, bl = b.length;
+  if (!al) return bl; if (!bl) return al;
+  const dp = Array.from({ length: al + 1 }, () => Array(bl + 1).fill(0));
+  for (let i = 0; i <= al; i++) dp[i][0] = i;
+  for (let j = 0; j <= bl; j++) dp[0][j] = j;
+  for (let i = 1; i <= al; i++) {
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + cost);
+      }
+    }
+  }
+  return dp[al][bl];
+}
+function scoreEntry(entry, qTokens) {
+  if (!qTokens.length) return 1;
+  let score = 0;
+  const cand = normalize(entry.display);
+  const candTokens = entry.tokens;
+  let allContain = true;
+  for (const t of qTokens) { if (!cand.includes(t)) { allContain = false; break; } }
+  if (allContain) score += 30;
+
+  for (const qt of qTokens) {
+    let best = 0;
+    for (const ct of candTokens) {
+      if (ct === qt) best = Math.max(best, 12);
+      else if (ct.startsWith(qt)) best = Math.max(best, 9);
+      else {
+        const d = levenshtein(qt, ct);
+        const m = Math.max(qt.length, ct.length);
+        const sim = 1 - d / m;
+        if (sim > 0.6) best = Math.max(best, sim * 8);
+      }
+    }
+    score += best;
+  }
+  score += Math.max(0, 6 - Math.min(6, entry.display.length / 20));
+  return score;
+}
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function highlightHtml(text, qTokens) {
+  let out = escapeHtml(text);
+  qTokens.forEach((t) => {
+    if (!t) return;
+    const re = new RegExp(`(${escapeRegExp(t)})`, "ig");
+    out = out.replace(re, "<mark>$1</mark>");
+  });
+  return { __html: out };
+}
+
+/** Build dropdown entry (canonical display = base without variant) */
+function makeEntry(nameRaw, type) {
+  const base = getBaseCardName(nameRaw);
+  const display = canonicalBrandCase(base);
+  return { display, base, type, tokens: tokensOf(display) };
+}
+
+/** EXACT hotel-like matching:
+ *  - We match by base (case/space-insensitive).
+ *  - If the *list item* has a trailing (Variant), we return that variant
+ *    so the card can show the red note.
+ */
+function matchItemAgainstSelected(listItem, selectedBase) {
+  const itemBaseKey = canonicalKey(listItem);
+  const selBaseKey  = canonicalKey(selectedBase);
+  if (itemBaseKey !== selBaseKey) return { ok: false, variantText: "" };
+
+  const variant = getNetworkVariant(listItem); // ONLY trailing (...) counts
+  return { ok: true, variantText: variant || "" };
+}
+
+/** -------------------- COMPONENT -------------------- */
 const AirlineOffers = () => {
-  const [creditCards, setCreditCards] = useState([]);
-  const [debitCards, setDebitCards] = useState([]);
+  // dropdown entries
+  const [creditEntries, setCreditEntries] = useState([]);
+  const [debitEntries, setDebitEntries] = useState([]);
+
+  // UI
   const [filteredCards, setFilteredCards] = useState([]);
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState("");
-  const [easeOffers, setEaseOffers] = useState([]);
-  const [yatraDomesticOffers, setYatraDomesticOffers] = useState([]);
-  const [yatraInternationalOffers, setYatraInternationalOffers] = useState([]);
-  const [ixigoOffers, setIxigoOffers] = useState([]);
-  const [airlineOffers, setAirlineOffers] = useState([]);
-  const [noOffersMessage, setNoOffersMessage] = useState(false);
-  const [makeMyTripOffers, setMakeMyTripOffers] = useState([]);
-  const [clearTripOffers, setClearTripOffers] = useState([]);
-  const [goibiboOffers, setGoibiboOffers] = useState([]);
-  const [permanentOffers, setPermanentOffers] = useState([]);
+  const [selectedEntry, setSelectedEntry] = useState(null);
   const [isDebitCardSelected, setIsDebitCardSelected] = useState(false);
+  const [noOffersMessage, setNoOffersMessage] = useState(false);
+
+  // offers
+  const [easeOffers, setEaseOffers] = useState([]);
+  const [yatraDom, setYatraDom] = useState([]);
+  const [yatraInt, setYatraInt] = useState([]);
+  const [ixigo, setIxigo] = useState([]);
+  const [airline, setAirline] = useState([]);
+  const [mmt, setMMT] = useState([]);
+  const [clearTrip, setClearTrip] = useState([]);
+  const [goibibo, setGoibibo] = useState([]);
+  const [permanent, setPermanent] = useState([]);
+
+  // group list for dropdown
+  const buildGroupedList = (creditArr, debitArr, qTokens = []) => {
+    const out = [];
+    if (creditArr.length) {
+      out.push({ type: "heading", label: "Credit Cards" });
+      out.push(...creditArr.map((entry) => ({
+        type: "credit",
+        entry,
+        __html: highlightHtml(entry.display, qTokens),
+      })));
+    }
+    if (debitArr.length) {
+      out.push({ type: "heading", label: "Debit Cards" });
+      out.push(...debitArr.map((entry) => ({
+        type: "debit",
+        entry,
+        __html: highlightHtml(entry.display, qTokens),
+      })));
+    }
+    return out;
+  };
 
   useEffect(() => {
     const fetchCSVData = async () => {
       try {
         const files = [
           { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
-          { name: "YATRA AIRLINE DOMESTIC.csv", setter: setYatraDomesticOffers },
-          { name: "YATRA AIRLINE INTERNATIONAL.csv", setter: setYatraInternationalOffers },
-          { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
-          { name: "Airline-offers.csv", setter: setAirlineOffers },
-          { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
-          { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
-          { name: "GOIBIBO AIRLINE.csv", setter: setGoibiboOffers },
-          { name: "Updated_Permanent_Offers.csv", setter: setPermanentOffers },
+          { name: "YATRA AIRLINE DOMESTIC.csv", setter: setYatraDom },
+          { name: "YATRA AIRLINE INTERNATIONAL.csv", setter: setYatraInt },
+          { name: "IXIGO AIRLINE.csv", setter: setIxigo },
+          { name: "Airline-offers.csv", setter: setAirline },
+          { name: "MAKE MY TRIP.csv", setter: setMMT },
+          { name: "CLEAR TRIP.csv", setter: setClearTrip },
+          { name: "GOIBIBO AIRLINE.csv", setter: setGoibibo },
+          { name: "Updated_Permanent_Offers.csv", setter: setPermanent },
         ];
 
-        let allCreditCards = new Set();
-        let allDebitCards = new Set();
+        // Build canonical dropdown sets using maps (base only)
+        const creditMap = new Map();
+        const debitMap  = new Map();
 
-        for (let file of files) {
-          const response = await axios.get(`/${file.name}`);
-          const parsedData = Papa.parse(response.data, { header: true });
+        for (const f of files) {
+          const resp = await axios.get(`/${f.name}`);
+          const parsed = Papa.parse(resp.data, { header: true });
+          const rows = parsed.data || [];
 
-          if (file.name === "Airline-offers.csv") {
-            // extract debit cards
-            parsedData.data.forEach((row) => {
-              if (row["Applicable Debit Cards"]) {
-                row["Applicable Debit Cards"].split(",").forEach((card) => {
-                  allDebitCards.add(card.trim());
-                });
-              }
+          for (const row of rows) {
+            splitList(firstField(row, LIST_FIELDS.credit)).forEach((c) => {
+              const base = getBaseCardName(c);
+              const key = canonicalKey(base);
+              if (!creditMap.has(key)) creditMap.set(key, canonicalBrandCase(base));
             });
-          } else if (file.name === "Updated_Permanent_Offers.csv") {
-            // extract credit cards from permanent offers
-            parsedData.data.forEach((row) => {
-              if (row["Credit Card Name"]) {
-                allCreditCards.add(row["Credit Card Name"].trim());
-              }
+            splitList(firstField(row, LIST_FIELDS.debit)).forEach((d) => {
+              const base = getBaseCardName(d);
+              const key = canonicalKey(base);
+              if (!debitMap.has(key)) debitMap.set(key, canonicalBrandCase(base));
             });
-          } else {
-            // extract credit cards from all other files
-            parsedData.data.forEach((row) => {
-              if (row["Eligible Cards"]) {
-                row["Eligible Cards"].split(",").forEach((card) => {
-                  allCreditCards.add(card.trim());
-                });
-              }
-            });
+
+            const ccName = firstField(row, LIST_FIELDS.permanentCCName);
+            if (ccName) {
+              const base = getBaseCardName(ccName);
+              const key = canonicalKey(base);
+              if (!creditMap.has(key)) creditMap.set(key, canonicalBrandCase(base));
+            }
           }
 
-          file.setter(parsedData.data);
+          f.setter(rows);
         }
 
-        setCreditCards(Array.from(allCreditCards).sort());
-        setDebitCards(Array.from(allDebitCards).sort());
-      } catch (error) {
-        console.error("Error loading CSV data:", error);
+        const creditEntriesBuilt = [...creditMap.values()]
+          .sort((a, b) => a.localeCompare(b))
+          .map((name) => makeEntry(name, "credit"));
+        const debitEntriesBuilt = [...debitMap.values()]
+          .sort((a, b) => a.localeCompare(b))
+          .map((name) => makeEntry(name, "debit"));
+
+        setCreditEntries(creditEntriesBuilt);
+        setDebitEntries(debitEntriesBuilt);
+        setFilteredCards(buildGroupedList(creditEntriesBuilt, debitEntriesBuilt, []));
+      } catch (e) {
+        console.error("Error loading CSV:", e);
       }
     };
 
     fetchCSVData();
   }, []);
 
-  const handleInputChange = (event) => {
-    const value = event.target.value;
+  const rankAndFilter = (entries, qTokens) => {
+    if (!qTokens.length) return entries.slice(0, MAX_SUGGESTIONS);
+    return entries
+      .map((e) => ({ e, s: scoreEntry(e, qTokens) }))
+      .filter(({ s }) => s > 0)
+      .sort((a, b) => (b.s - a.s) || a.e.display.localeCompare(b.e.display))
+      .slice(0, MAX_SUGGESTIONS)
+      .map(({ e }) => e);
+  };
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
     setQuery(value);
-
-    if (value) {
-      // Split search terms and match all terms (substring matching)
-      const searchTerms = value.toLowerCase().split(/\s+/);
-      
-      const filteredCredit = creditCards.filter((card) => {
-        const cardLower = card.toLowerCase();
-        return searchTerms.every(term => cardLower.includes(term));
-      });
-      
-      const filteredDebit = debitCards.filter((card) => {
-        const cardLower = card.toLowerCase();
-        return searchTerms.every(term => cardLower.includes(term));
-      });
-
-      // Combine filtered credit and debit cards with headings
-      const combinedResults = [];
-      if (filteredCredit.length > 0) {
-        combinedResults.push({ type: "heading", label: "Credit Cards" });
-        combinedResults.push(...filteredCredit.map((card) => ({ type: "credit", card })));
-      }
-      if (filteredDebit.length > 0) {
-        combinedResults.push({ type: "heading", label: "Debit Cards" });
-        combinedResults.push(...filteredDebit.map((card) => ({ type: "debit", card })));
-      }
-
-      setFilteredCards(combinedResults);
-
-      if (filteredCredit.length === 0 && filteredDebit.length === 0) {
-        setNoOffersMessage(true);
-        setSelectedCard("");
-      } else {
-        setNoOffersMessage(false);
-      }
+    const qTokens = tokensOf(value);
+    if (value.trim()) {
+      const combined = buildGroupedList(
+        rankAndFilter(creditEntries, qTokens),
+        rankAndFilter(debitEntries, qTokens),
+        qTokens
+      );
+      setFilteredCards(combined);
+      setNoOffersMessage(combined.filter((i) => i.type !== "heading").length === 0);
     } else {
-      setFilteredCards([]);
+      setFilteredCards(buildGroupedList(creditEntries, debitEntries, []));
       setNoOffersMessage(false);
       setSelectedCard("");
+      setSelectedEntry(null);
     }
   };
 
-  const handleCardSelection = (card, type) => {
-    setSelectedCard(card);
-    setQuery(card);
+  const handleCardSelection = (entry, type) => {
+    setSelectedCard(entry.display);
+    setSelectedEntry(entry);
+    setQuery(entry.display);
     setFilteredCards([]);
     setNoOffersMessage(false);
     setIsDebitCardSelected(type === "debit");
   };
 
-  const getOffersForSelectedCard = (offers, isDebit = false, isPermanent = false) => {
-    return offers.filter((offer) => {
-      if (isDebit) {
-        return (
-          offer["Applicable Debit Cards"] &&
-          offer["Applicable Debit Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
-        );
-      } else if (isPermanent) {
-        return (
-          offer["Credit Card Name"] &&
-          offer["Credit Card Name"].trim() === selectedCard
-        );
-      } else {
-        return (
-          offer["Eligible Cards"] &&
-          offer["Eligible Cards"].split(",").map((c) => c.trim()).includes(selectedCard)
-        );
+  /** Return wrappers like hotel code: { offer, variantText, site }.
+   *  variantText is taken from the EXACT list item that matched (ONLY if trailing (...)).
+   */
+  const getOffersForSelectedCard = (offers, isDebit = false, isPermanent = false, siteName = "") => {
+    if (!selectedEntry) return [];
+    const out = [];
+    for (const offer of (offers || [])) {
+      if (isPermanent) {
+        const ccName = firstField(offer, LIST_FIELDS.permanentCCName);
+        if (!ccName) continue;
+        const { ok, variantText } = matchItemAgainstSelected(ccName, selectedEntry.base);
+        if (!ok) continue;
+        out.push({ offer, variantText, site: siteName });
+        continue;
       }
-    });
+
+      const list = splitList(firstField(offer, isDebit ? LIST_FIELDS.debit : LIST_FIELDS.credit));
+      let matched = false;
+      let variantText = "";
+      for (const item of list) {
+        const res = matchItemAgainstSelected(item, selectedEntry.base);
+        if (res.ok) {
+          matched = true;
+          // prefer first non-empty variant encountered
+          if (res.variantText && !variantText) variantText = res.variantText;
+        }
+      }
+      if (matched) out.push({ offer, variantText, site: siteName });
+    }
+    return out;
   };
 
-  const selectedEaseOffers = getOffersForSelectedCard(easeOffers);
-  const selectedYatraDomesticOffers = getOffersForSelectedCard(yatraDomesticOffers);
-  const selectedYatraInternationalOffers = getOffersForSelectedCard(yatraInternationalOffers);
-  const selectedIxigoOffers = getOffersForSelectedCard(ixigoOffers);
-  const selectedDebitAirlineOffers = getOffersForSelectedCard(airlineOffers, true);
-  const selectedMakeMyTripOffers = getOffersForSelectedCard(makeMyTripOffers);
-  const selectedClearTripOffers = getOffersForSelectedCard(clearTripOffers);
-  const selectedGoibiboOffers = getOffersForSelectedCard(goibiboOffers);
-  const selectedPermanentOffers = getOffersForSelectedCard(permanentOffers, false, true);
+  // collect all sections
+  const sEase  = getOffersForSelectedCard(easeOffers, isDebitCardSelected, false, "EaseMyTrip");
+  const sYDom  = getOffersForSelectedCard(yatraDom,  isDebitCardSelected, false, "Yatra (Domestic)");
+  const sYInt  = getOffersForSelectedCard(yatraInt,  isDebitCardSelected, false, "Yatra (International)");
+  const sIxigo = getOffersForSelectedCard(ixigo,     isDebitCardSelected, false, "Ixigo");
+  const sAir   = getOffersForSelectedCard(airline,   isDebitCardSelected, false, "Airline");
+  const sMMT   = getOffersForSelectedCard(mmt,       isDebitCardSelected, false, "MakeMyTrip");
+  const sCT    = getOffersForSelectedCard(clearTrip, isDebitCardSelected, false, "ClearTrip");
+  const sGoi   = getOffersForSelectedCard(goibibo,   isDebitCardSelected, false, "Goibibo");
+  const sPerm  = getOffersForSelectedCard(permanent, false, true, "Permanent");
 
-  // Calculate if we should show scroll button
-  const hasAnyOffers = 
-    selectedEaseOffers.length > 0 ||
-    selectedYatraDomesticOffers.length > 0 ||
-    selectedYatraInternationalOffers.length > 0 ||
-    selectedIxigoOffers.length > 0 ||
-    selectedDebitAirlineOffers.length > 0 ||
-    selectedMakeMyTripOffers.length > 0 ||
-    selectedClearTripOffers.length > 0 ||
-    selectedGoibiboOffers.length > 0 ||
-    selectedPermanentOffers.length > 0;
-  
-  const showScrollButton = hasAnyOffers;
+  // global dedup by priority
+  const seen = new Set();
+  const dPerm = !isDebitCardSelected ? dedupWrapperArray(sPerm, seen) : [];
+  const dAir  = dedupWrapperArray(sAir,  seen);
+  const dGoi  = dedupWrapperArray(sGoi,  seen);
+  const dEase = dedupWrapperArray(sEase, seen);
+  const dYDom = dedupWrapperArray(sYDom, seen);
+  const dYInt = dedupWrapperArray(sYInt, seen);
+  const dIxi  = dedupWrapperArray(sIxigo, seen);
+  const dMMT  = dedupWrapperArray(sMMT, seen);
+  const dCT   = dedupWrapperArray(sCT,  seen);
 
-  // Scroll down handler
-  const handleScrollDown = () => {
-    window.scrollBy({
-      top: window.innerHeight,
-      behavior: "smooth"
-    });
+  const hasAny =
+    dPerm.length || dAir.length || dGoi.length || dEase.length ||
+    dYDom.length || dYInt.length || dIxi.length || dMMT.length || dCT.length;
+
+  const OfferCard = ({ offer, variantText }) => {
+    const image = firstField(offer, LIST_FIELDS.image);
+    const title = firstField(offer, LIST_FIELDS.title) || offer.Website || "Offer";
+    const desc  = firstField(offer, LIST_FIELDS.desc);
+    const link  = firstField(offer, LIST_FIELDS.link);
+    return (
+      <div className="offer-card">
+        {image && <img src={image} alt={title} />}
+        <div className="offer-info">
+          <h3>{title}</h3>
+          {desc && <p>{desc}</p>}
+
+          {/* EXACTLY like hotel: only show when trailing (...) was present in matched list item */}
+          {variantText && (
+            <div style={{ color: "#d32f2f", fontWeight: 600, margin: "8px 0" }}>
+              Applicable only on <em>{variantText}</em> variant
+            </div>
+          )}
+
+          {link && (
+            <button onClick={() => window.open(link, "_blank")}>
+              View Offer
+            </button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
-      <div
-        className="dropdown"
-        style={{ position: "relative", width: "600px", margin: "2px auto" }}
-      >
+      {/* Dropdown */}
+      <div className="dropdown" style={{ position: "relative", width: "600px", margin: "2px auto" }}>
         <input
           type="text"
           value={query}
           onChange={handleInputChange}
-          placeholder="Type a Credit Card..."
-          style={{
-            width: "100%",
-            padding: "12px",
-            fontSize: "16px",
-            border: "1px solid #ccc",
-            borderRadius: "5px",
-          }}
+          placeholder="Type a Credit or Debit Card..."
+          style={{ width: "100%", padding: 12, fontSize: 16, border: "1px solid #ccc", borderRadius: 5 }}
         />
 
         {filteredCards.length > 0 && (
-          <ul
-            style={{
-              listStyleType: "none",
-              padding: "10px",
-              margin: 0,
-              width: "100%",
-              maxHeight: "200px",
-              overflowY: "auto",
-              border: "1px solid #ccc",
-              borderRadius: "5px",
-              backgroundColor: "#fff",
-              position: "absolute",
-              zIndex: 1000,
-            }}
-          >
+          <ul style={{
+            listStyleType: "none", padding: 10, margin: 0, width: "100%",
+            maxHeight: 240, overflowY: "auto", border: "1px solid #ccc",
+            borderRadius: 5, backgroundColor: "#fff", position: "absolute", zIndex: 1000
+          }}>
             {filteredCards.map((item, index) =>
               item.type === "heading" ? (
-                <li key={index} style={{ padding: "10px", fontWeight: "bold" }}>
+                <li key={`h-${index}`} style={{ padding: "10px", fontWeight: "bold", background: "#fafafa" }}>
                   {item.label}
                 </li>
               ) : (
                 <li
-                  key={index}
-                  onClick={() => handleCardSelection(item.card, item.type)}
+                  key={`i-${index}-${item.entry.display}`}
+                  onClick={() => {
+                    setSelectedCard(item.entry.display);
+                    setSelectedEntry(item.entry);
+                    setIsDebitCardSelected(item.type === "debit");
+                    setQuery(item.entry.display);
+                    setFilteredCards([]);
+                    setNoOffersMessage(false);
+                  }}
                   style={{
                     padding: "10px",
                     cursor: "pointer",
-                    borderBottom:
-                      index !== filteredCards.length - 1
-                        ? "1px solid #eee"
-                        : "none",
+                    borderBottom: index !== filteredCards.length - 1 ? "1px solid #eee" : "none",
                   }}
-                  onMouseOver={(e) =>
-                    (e.target.style.backgroundColor = "#f0f0f0")
-                  }
-                  onMouseOut={(e) =>
-                    (e.target.style.backgroundColor = "transparent")
-                  }
+                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#f5f7fb")}
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                 >
-                  {item.card}
+                  <span dangerouslySetInnerHTML={item.__html} />
                 </li>
               )
             )}
@@ -257,230 +487,112 @@ const AirlineOffers = () => {
       </div>
 
       {noOffersMessage && (
-        <p style={{ color: "red", textAlign: "center", marginTop: "10px" }}>
-          No matching offers found for the entered card.
+        <p style={{ color: "red", textAlign: "center", marginTop: 10 }}>
+          No matching cards found. Try including part of the card name.
         </p>
       )}
 
-      {selectedCard && (
-        <div className="offers-section" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-          {/* Debit Card Offers Section - Show first if debit card selected */}
-          {isDebitCardSelected && selectedDebitAirlineOffers.length > 0 && (
-            <div>
-              <h2>Debit Card Offers</h2>
-              <div className="offer-grid">
-                {selectedDebitAirlineOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Website} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"] || offer.Website}</h3>
-                      {offer.Validity && <p>Validity: {offer.Validity}</p>}
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Permanent Offers Section */}
-          {!isDebitCardSelected && selectedPermanentOffers.length > 0 && (
+      {selectedCard && hasAny && (
+        <div className="offers-section" style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px" }}>
+          {!isDebitCardSelected && dPerm.length > 0 && (
             <div>
               <h2>Permanent Offers</h2>
               <div className="offer-grid">
-                {selectedPermanentOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    <img src={offer["Credit Card Image"]} alt={offer["Credit Card Name"]} />
-                    <div className="offer-info">
-                      <h3>{offer["Flight Benefit"]}</h3>
-                    </div>
-                  </div>
+                {dPerm.map((w, idx) => (
+                  <OfferCard key={`p-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Goibibo Offers Section */}
-          {!isDebitCardSelected && selectedGoibiboOffers.length > 0 && (
+          {dAir.length > 0 && (
+            <div>
+              <h2>Airline Offers</h2>
+              <div className="offer-grid">
+                {dAir.map((w, idx) => (
+                  <OfferCard key={`air-${idx}`} offer={w.offer} variantText={w.variantText} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dGoi.length > 0 && (
             <div>
               <h2>Offers on Goibibo</h2>
               <div className="offer-grid">
-                {selectedGoibiboOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dGoi.map((w, idx) => (
+                  <OfferCard key={`go-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* EaseMyTrip Offers Section */}
-          {!isDebitCardSelected && selectedEaseOffers.length > 0 && (
+          {dEase.length > 0 && (
             <div>
               <h2>Offers on EaseMyTrip</h2>
               <div className="offer-grid">
-                {selectedEaseOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dEase.map((w, idx) => (
+                  <OfferCard key={`emt-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Yatra Domestic Offers Section */}
-          {!isDebitCardSelected && selectedYatraDomesticOffers.length > 0 && (
+          {dYDom.length > 0 && (
             <div>
               <h2>Offers on Yatra (Domestic)</h2>
               <div className="offer-grid">
-                {selectedYatraDomesticOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dYDom.map((w, idx) => (
+                  <OfferCard key={`yd-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Yatra International Offers Section */}
-          {!isDebitCardSelected && selectedYatraInternationalOffers.length > 0 && (
+          {dYInt.length > 0 && (
             <div>
               <h2>Offers on Yatra (International)</h2>
               <div className="offer-grid">
-                {selectedYatraInternationalOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dYInt.map((w, idx) => (
+                  <OfferCard key={`yi-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Ixigo Offers Section */}
-          {!isDebitCardSelected && selectedIxigoOffers.length > 0 && (
+          {dIxi.length > 0 && (
             <div>
               <h2>Offers on Ixigo</h2>
               <div className="offer-grid">
-                {selectedIxigoOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dIxi.map((w, idx) => (
+                  <OfferCard key={`ix-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* MakeMyTrip Offers Section */}
-          {!isDebitCardSelected && selectedMakeMyTripOffers.length > 0 && (
+          {dMMT.length > 0 && (
             <div>
               <h2>Offers on MakeMyTrip</h2>
               <div className="offer-grid">
-                {selectedMakeMyTripOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dMMT.map((w, idx) => (
+                  <OfferCard key={`mmt-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* ClearTrip Offers Section */}
-          {!isDebitCardSelected && selectedClearTripOffers.length > 0 && (
+          {dCT.length > 0 && (
             <div>
               <h2>Offers on ClearTrip</h2>
               <div className="offer-grid">
-                {selectedClearTripOffers.map((offer, index) => (
-                  <div key={index} className="offer-card">
-                    {offer.Image && <img src={offer.Image} alt={offer.Title} />}
-                    <div className="offer-info">
-                      <h3>{offer["Offer Title"]}</h3>
-                      {offer.Link && (
-                        <button onClick={() => window.open(offer.Link, "_blank")}>
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                {dCT.map((w, idx) => (
+                  <OfferCard key={`ct-${idx}`} offer={w.offer} variantText={w.variantText} />
                 ))}
               </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* Scroll Down Button */}
-      {showScrollButton && (
-        <button 
-          onClick={handleScrollDown}
-          style={{
-            position: 'fixed',
-            right: '20px',
-            bottom: '150px',
-            padding: '10px 15px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontSize: '16px',
-            zIndex: 1000,
-            boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
-          }}
-        >
-          Scroll Down
-        </button>
       )}
     </div>
   );
