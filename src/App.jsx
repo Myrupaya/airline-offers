@@ -230,7 +230,7 @@ const AirlineOffers = () => {
         const debitMap = new Map();
 
         for (const f of files) {
-          const res = await axios.get(`/${f.name}`);
+          const res = await axios.get(`${process.env.PUBLIC_URL}/${f.name}`);
           const parsed = Papa.parse(res.data, { header: true });
           const rows = parsed.data || [];
 
