@@ -215,15 +215,15 @@ const AirlineOffers = () => {
     async function load() {
       try {
         const files = [
-          { name: "EASE MY TRIP AIRLINE.csv", setter: setEaseOffers },
-          { name: "YATRA AIRLINE DOMESTIC.csv", setter: setYatraDomesticOffers },
-          { name: "YATRA AIRLINE INTERNATIONAL.csv", setter: setYatraInternationalOffers },
-          { name: "IXIGO AIRLINE.csv", setter: setIxigoOffers },
-          { name: "Airline-offers.csv", setter: setAirlineOffers },
-          { name: "MAKE MY TRIP.csv", setter: setMakeMyTripOffers },
-          { name: "CLEAR TRIP.csv", setter: setClearTripOffers },
-          { name: "GOIBIBO AIRLINE.csv", setter: setGoibiboOffers },
-          { name: "Updated_Permanent_Offers.csv", setter: setPermanentOffers },
+          { name: "easeMyTrip.csv", setter: setEaseOffers },
+          { name: "yatraDomestic.csv", setter: setYatraDomesticOffers },
+          { name: "yatraInternational.csv", setter: setYatraInternationalOffers },
+          { name: "ixigo.csv", setter: setIxigoOffers },
+          
+          { name: "makemytrip.csv", setter: setMakeMyTripOffers },
+          { name: "cleartrip.csv", setter: setClearTripOffers },
+          { name: "goibibo.csv", setter: setGoibiboOffers },
+          { name: "permanent.csv", setter: setPermanentOffers },
         ];
 
         const creditMap = new Map(); // baseNorm -> display (canonical)
