@@ -18,7 +18,7 @@ const LIST_FIELDS = {
 
 const MAX_SUGGESTIONS = 50;
 
-/** Sites that should display the red per-card “Applicable only on {variant} variant” note */
+/** Sites that should show the red per-card variant note */
 const VARIANT_NOTE_SITES = new Set([
   "EaseMyTrip",
   "Yatra (Domestic)",
@@ -31,7 +31,56 @@ const VARIANT_NOTE_SITES = new Set([
   "Permanent",
 ]);
 
-/** -------------------- HELPERS -------------------- */
+/** -------------------- IMAGE FALLBACKS -------------------- */
+/* Keys must be lowercase versions of the site labels you pass into wrappers */
+const FALLBACK_IMAGE_BY_SITE = {
+  "cleartrip":
+    "https://digitalscholar.in/wp-content/uploads/2022/08/Cleartrip-Digital-marketing-strategies.webp",
+  "easemytrip":
+    "https://www.traveltrendstoday.in/storage/posts/channels4-profile-12.jpg",
+  "goibibo":
+    "https://img-cdn.publive.online/fit-in/1200x675/filters:format(webp)/smstreet/media/media_files/oh1xyxLOe0PaiN1jF9uP.jpg",
+  "ixigo":
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Ixigo_logo.svg/2560px-Ixigo_logo.svg.png",
+  "makemytrip":
+    "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/112019/mmt_fullcolor.png?JgFR3clMwpXRH2xztnw10uhf0tUSghgS&itok=2eLs41rV",
+  "yatra (domestic)":
+    "https://play-lh.googleusercontent.com/6ACvwZruB53DwP81U-vwvBob0rgMR1NxwyocN-g5Ey72k1HWbz9FmNuiMxPte4N8SQ",
+  "yatra (international)":
+    "https://play-lh.googleusercontent.com/6ACvwZruB53DwP81U-vwvBob0rgMR1NxwyocN-g5Ey72k1HWbz9FmNuiMxPte4N8SQ",
+};
+
+/** Helpers to decide usable image & resolve fallback */
+function isUsableImage(val) {
+  if (!val) return false;
+  const s = String(val).trim();
+  if (!s) return false;
+  if (/^(na|n\/a|null|undefined|-|image unavailable)$/i.test(s)) return false;
+  return true;
+}
+function resolveImage(siteKey, candidate) {
+  const key = String(siteKey || "").toLowerCase();
+  const fallback = FALLBACK_IMAGE_BY_SITE[key];
+  const usingFallback = !isUsableImage(candidate) && !!fallback;
+  return {
+    src: usingFallback ? fallback : candidate,
+    usingFallback,
+  };
+}
+/** If network fails, swap to fallback and tag class for CSS */
+function handleImgError(e, siteKey) {
+  const key = String(siteKey || "").toLowerCase();
+  const fallback = FALLBACK_IMAGE_BY_SITE[key];
+  const el = e.currentTarget;
+  if (fallback && el.src !== fallback) {
+    el.src = fallback;
+    el.classList.add("is-fallback");
+  } else {
+    el.style.display = "none"; // hide entirely if even fallback fails
+  }
+}
+
+/** -------------------- TEXT HELPERS -------------------- */
 const toNorm = (s) =>
   String(s || "")
     .toLowerCase()
@@ -64,20 +113,15 @@ function splitList(val) {
     .filter(Boolean);
 }
 
-/** Strip trailing parentheses: "HDFC Regalia (Visa Signature)" -> "HDFC Regalia" */
 function getBase(name) {
   if (!name) return "";
   return String(name).replace(/\s*\([^)]*\)\s*$/, "").trim();
 }
-
-/** Variant if present at end-in-parens: "… (Visa Signature)" -> "Visa Signature" */
 function getVariant(name) {
   if (!name) return "";
   const m = String(name).match(/\(([^)]+)\)\s*$/);
   return m ? m[1].trim() : "";
 }
-
-/** Canonicalize some common brand spellings */
 function brandCanonicalize(text) {
   let s = String(text || "");
   s = s.replace(/\bMakemytrip\b/gi, "MakeMyTrip");
@@ -91,7 +135,7 @@ function brandCanonicalize(text) {
   return s;
 }
 
-/** Levenshtein distance */
+/** Fuzzy scoring */
 function lev(a, b) {
   a = toNorm(a);
   b = toNorm(b);
@@ -110,16 +154,13 @@ function lev(a, b) {
   }
   return d[n][m];
 }
-
 function scoreCandidate(q, cand) {
   const qs = toNorm(q);
   const cs = toNorm(cand);
   if (!qs) return 0;
   if (cs.includes(qs)) return 100;
-
   const qWords = qs.split(" ").filter(Boolean);
   const cWords = cs.split(" ").filter(Boolean);
-
   const matchingWords = qWords.filter((qw) => cWords.some((cw) => cw.includes(qw))).length;
   const sim = 1 - lev(qs, cs) / Math.max(qs.length, cs.length);
   return (matchingWords / Math.max(1, qWords.length)) * 0.7 + sim * 0.3;
@@ -179,9 +220,9 @@ const AirlineOffers = () => {
   const [creditEntries, setCreditEntries] = useState([]);
   const [debitEntries, setDebitEntries] = useState([]);
 
-  // 🔹 chip strips (from offer CSVs ONLY — NOT allCards.csv)
-  const [chipCC, setChipCC] = useState([]); // credit bases
-  const [chipDC, setChipDC] = useState([]); // debit bases
+  // chip strips (from offer CSVs ONLY)
+  const [chipCC, setChipCC] = useState([]);
+  const [chipDC, setChipDC] = useState([]);
 
   // ui state
   const [filteredCards, setFilteredCards] = useState([]);
@@ -373,7 +414,7 @@ const AirlineOffers = () => {
           return { it, s, inc };
         })
         .filter(({ s, inc }) => inc || s > 0.3)
-        .sort((a, b) => (b.s - a.s) || a.it.display.localeCompare(b.it.display))
+        .sort((a, b) => b.s - a.s || a.it.display.localeCompare(b.it.display))
         .slice(0, MAX_SUGGESTIONS)
         .map(({ it }) => it);
 
@@ -484,7 +525,7 @@ const AirlineOffers = () => {
   const OfferCard = ({ wrapper, isPermanent }) => {
     const o = wrapper.offer;
     const title = firstField(o, LIST_FIELDS.title) || o.Website || "Offer";
-    const image = firstField(o, LIST_FIELDS.image);
+    const candidateImage = firstField(o, LIST_FIELDS.image);
     const desc = firstField(o, LIST_FIELDS.desc);
     const link = firstField(o, LIST_FIELDS.link);
 
@@ -495,9 +536,20 @@ const AirlineOffers = () => {
 
     const permanentBenefit = isPermanent ? firstField(o, LIST_FIELDS.permanentBenefit) : "";
 
+    // Resolve image (offer image or fallback logo)
+    const siteKey = String(wrapper.site || "").toLowerCase();
+    const { src: imgSrc, usingFallback } = resolveImage(siteKey, candidateImage);
+
     return (
       <div className="offer-card">
-        {image && <img src={image} alt={title} />}
+        {imgSrc && (
+          <img
+            className={`offer-img ${usingFallback ? "is-fallback" : ""}`}
+            src={imgSrc}
+            alt={title}
+            onError={(e) => handleImgError(e, siteKey)}
+          />
+        )}
         <div className="offer-info">
           <h3 className="offer-title">{title}</h3>
 
@@ -530,7 +582,6 @@ const AirlineOffers = () => {
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
-      {/* 🔹 Cards-with-offers strip container — same CSS vibe as your HotelOffers block */}
       {(chipCC.length > 0 || chipDC.length > 0) && (
         <div
           style={{

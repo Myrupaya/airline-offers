@@ -14,7 +14,7 @@ body{
 
 .offer-group{ margin:24px 0 8px; }
 .offer-group > h2{
-  text-align:center;                /* centered section headings */
+  text-align:center;
   font-weight:700;
   font-size:27px;
   margin:6px 0 22px;
@@ -23,10 +23,9 @@ body{
 /* ----------------  Grid & Cards  ---------------- */
 .offer-grid{
   display:grid;
-  /* Left-starting grid on desktop; cards stretch to column width */
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap:32px;
-  justify-items:stretch;            /* cards take full column width */
+  justify-items:stretch;
   align-items:stretch;
 }
 
@@ -36,16 +35,27 @@ body{
   border:1px solid #eee;
   box-shadow:0 6px 18px rgba(0,0,0,0.07);
   overflow:hidden;
-  width:90%;                       /* no fixed max-width; let grid control width */
+  width:90%;
 }
 
-.offer-card img{
+/* ----------------  Images  ---------------- */
+/* Default: REAL OFFER IMAGES (fixed size, cover) */
+.offer-card .offer-img{
   width:100%;
   height:220px;
-  object-fit:cover;
+  object-fit:cover;          /* crop nicely for real posters */
   display:block;
+  border-top-left-radius:12px;
+  border-top-right-radius:12px;
 }
 
+/* Only when a site LOGO fallback is used */
+.offer-card .offer-img.is-fallback{
+  object-fit:contain;        /* keep logo intact */
+  background:#fff;           /* clean letterbox */
+}
+
+/* ----------------  Content  ---------------- */
 .offer-info{
   padding:18px 18px 20px;
   text-align:center;
@@ -94,7 +104,7 @@ body{
   box-shadow:0 0 0 3px rgba(122,140,255,.15);
 }
 
-/* Only styling helpers; the list itself is rendered inline from JS */
+/* Inline dropdown list (rendered by JS) */
 ul{
   list-style:none;
   margin:0;
@@ -116,7 +126,7 @@ ul li{
 }
 ul li:hover{ background:#f0f0f0; }
 
-/* ----------------  Disclaimer (as before)  ---------------- */
+/* ----------------  Disclaimer  ---------------- */
 .disclaimer{
   max-width:900px;
   margin:36px auto 84px;
@@ -152,16 +162,16 @@ ul li:hover{ background:#f0f0f0; }
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap:28px;
   }
-  .offer-card img{ height:200px; }
+  .offer-card .offer-img{ height:200px; }
 }
 
 @media (max-width: 768px){
   .dropdown{ max-width:90%; margin:0 auto; }
   .offer-grid{
-    grid-template-columns: 1fr;     /* single column like your mobile screenshot */
+    grid-template-columns: 1fr;
     gap:22px;
   }
-  .offer-card img{ height:auto; }
+  .offer-card .offer-img{ height:auto; }      /* let real images breathe on narrow screens */
   .offer-title{ font-size:17px; }
   .offer-desc{ font-size:15px; }
   .disclaimer{ margin:28px auto 64px; }
