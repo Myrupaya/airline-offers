@@ -7,7 +7,7 @@ import "./App.css";
 const LIST_FIELDS = {
   credit: ["Eligible Credit Cards", "Eligible Cards"],
   debit: ["Eligible Debit Cards", "Applicable Debit Cards"],
-  title: ["Offer Title", "Title"],
+  title: ["Offer Title", "Title", "Offer"],
   image: ["Image", "Credit Card Image", "Offer Image", "image", "Image URL"],
   link: ["Link", "Offer Link"],
   desc: ["Description", "Details", "Offer Description", "Flight Benefit"],
