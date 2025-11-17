@@ -34,15 +34,15 @@ const VARIANT_NOTE_SITES = new Set([
 /** -------------------- IMAGE FALLBACKS -------------------- */
 /* Keys must be lowercase versions of the site labels you pass into wrappers */
 const FALLBACK_IMAGE_BY_SITE = {
-  "cleartrip":
+  cleartrip:
     "https://digitalscholar.in/wp-content/uploads/2022/08/Cleartrip-Digital-marketing-strategies.webp",
-  "easemytrip":
+  easemytrip:
     "https://www.traveltrendstoday.in/storage/posts/channels4-profile-12.jpg",
-  "goibibo":
+  goibibo:
     "https://img-cdn.publive.online/fit-in/1200x675/filters:format(webp)/smstreet/media/media_files/oh1xyxLOe0PaiN1jF9uP.jpg",
-  "ixigo":
+  ixigo:
     "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Ixigo_logo.svg/2560px-Ixigo_logo.svg.png",
-  "makemytrip":
+  makemytrip:
     "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/112019/mmt_fullcolor.png?JgFR3clMwpXRH2xztnw10uhf0tUSghgS&itok=2eLs41rV",
   "yatra (domestic)":
     "https://play-lh.googleusercontent.com/6ACvwZruB53DwP81U-vwvBob0rgMR1NxwyocN-g5Ey72k1HWbz9FmNuiMxPte4N8SQ",
@@ -398,19 +398,21 @@ const AirlineOffers = () => {
     const val = e.target.value;
     setQuery(val);
 
-    if (!val.trim()) {
+    const trimmed = val.trim();
+    if (!trimmed) {
       setFilteredCards([]);
       setSelected(null);
       setNoMatches(false);
       return;
     }
 
-    const q = val.trim().toLowerCase();
+    const qLower = trimmed.toLowerCase();
+
     const scored = (arr) =>
       arr
         .map((it) => {
-          const s = scoreCandidate(val, it.display);
-          const inc = it.display.toLowerCase().includes(q);
+          const s = scoreCandidate(trimmed, it.display);
+          const inc = it.display.toLowerCase().includes(qLower);
           return { it, s, inc };
         })
         .filter(({ s, inc }) => inc || s > 0.3)
@@ -418,8 +420,8 @@ const AirlineOffers = () => {
         .slice(0, MAX_SUGGESTIONS)
         .map(({ it }) => it);
 
-    const cc = scored(creditEntries);
-    const dc = scored(debitEntries);
+    let cc = scored(creditEntries);
+    let dc = scored(debitEntries);
 
     if (!cc.length && !dc.length) {
       setNoMatches(true);
@@ -429,12 +431,52 @@ const AirlineOffers = () => {
     }
 
     setNoMatches(false);
-    setFilteredCards([
-      ...(cc.length ? [{ type: "heading", label: "Credit Cards" }] : []),
-      ...cc,
-      ...(dc.length ? [{ type: "heading", label: "Debit Cards" }] : []),
-      ...dc,
-    ]);
+
+    /** --- SPECIAL CASE 1: "select credit card" → cards with this phrase on top --- */
+    const PRIORITY_SELECT = "select credit card";
+    if (qLower.includes(PRIORITY_SELECT)) {
+      const reorderBySelect = (arr) => {
+        const exact = [];
+        const contains = [];
+        const rest = [];
+        arr.forEach((item) => {
+          const label = item.display.toLowerCase();
+          if (label === PRIORITY_SELECT) exact.push(item);
+          else if (label.includes(PRIORITY_SELECT)) contains.push(item);
+          else rest.push(item);
+        });
+        return [...exact, ...contains, ...rest];
+      };
+      cc = reorderBySelect(cc);
+      dc = reorderBySelect(dc);
+    }
+
+    /** --- SPECIAL CASE 2: query mentions dc / debit / debit card → debit first --- */
+    const mentionsDebit =
+      qLower.includes("debit card") ||
+      qLower.includes("debit") ||
+      qLower.includes(" dc") ||
+      qLower.startsWith("dc ") ||
+      qLower.endsWith(" dc") ||
+      qLower === "dc";
+
+    if (mentionsDebit) {
+      // Debit section first, then credit
+      setFilteredCards([
+        ...(dc.length ? [{ type: "heading", label: "Debit Cards" }] : []),
+        ...dc,
+        ...(cc.length ? [{ type: "heading", label: "Credit Cards" }] : []),
+        ...cc,
+      ]);
+    } else {
+      // Default: Credit first, then debit
+      setFilteredCards([
+        ...(cc.length ? [{ type: "heading", label: "Credit Cards" }] : []),
+        ...cc,
+        ...(dc.length ? [{ type: "heading", label: "Debit Cards" }] : []),
+        ...dc,
+      ]);
+    }
   };
 
   const onPick = (entry) => {
@@ -492,8 +534,16 @@ const AirlineOffers = () => {
   const wAirline = matchesFor(airlineOffers, selected?.type === "debit" ? "debit" : "credit", "Airline");
   const wGoibibo = matchesFor(goibiboOffers, selected?.type === "debit" ? "debit" : "credit", "Goibibo");
   const wEase = matchesFor(easeOffers, selected?.type === "debit" ? "debit" : "credit", "EaseMyTrip");
-  const wYDom = matchesFor(yatraDomesticOffers, selected?.type === "debit" ? "debit" : "credit", "Yatra (Domestic)");
-  const wYInt = matchesFor(yatraInternationalOffers, selected?.type === "debit" ? "debit" : "credit", "Yatra (International)");
+  const wYDom = matchesFor(
+    yatraDomesticOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "Yatra (Domestic)"
+  );
+  const wYInt = matchesFor(
+    yatraInternationalOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "Yatra (International)"
+  );
   const wIxigo = matchesFor(ixigoOffers, selected?.type === "debit" ? "debit" : "credit", "Ixigo");
   const wMMT = matchesFor(makeMyTripOffers, selected?.type === "debit" ? "debit" : "credit", "MakeMyTrip");
   const wCT = matchesFor(clearTripOffers, selected?.type === "debit" ? "debit" : "credit", "ClearTrip");
