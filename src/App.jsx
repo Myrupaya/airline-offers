@@ -201,6 +201,19 @@ function dedupWrappers(arr, seen) {
   return out;
 }
 
+/** 🔹 NEW: fuzzy detection for "select" (handles "selct", "selet", "slect", etc.) */
+function hasSelectLikeWord(text) {
+  const qs = toNorm(text);
+  if (!qs) return false;
+  const words = qs.split(" ").filter(Boolean);
+  for (const w of words) {
+    if (w === "select") return true;
+    // allow small typos: distance <= 2
+    if (lev(w, "select") <= 2) return true;
+  }
+  return false;
+}
+
 /** Disclaimer */
 const Disclaimer = () => (
   <section className="disclaimer">
@@ -393,7 +406,7 @@ const AirlineOffers = () => {
     permanentOffers,
   ]);
 
-  /** search box */
+  /** 🔹 search box with fuzzy "select" handling */
   const onChangeQuery = (e) => {
     const val = e.target.value;
     setQuery(val);
@@ -407,15 +420,27 @@ const AirlineOffers = () => {
     }
 
     const qLower = trimmed.toLowerCase();
+    const queryHasSelectLike = hasSelectLikeWord(trimmed);
 
     const scored = (arr) =>
       arr
         .map((it) => {
           const s = scoreCandidate(trimmed, it.display);
-          const inc = it.display.toLowerCase().includes(qLower);
-          return { it, s, inc };
+          const labelNorm = toNorm(it.display);
+          const inc = labelNorm.includes(qLower);
+
+          // does this card label itself contain a "select" word (Axis Select, HDFC Select Credit Card, etc.)
+          const labelWords = labelNorm.split(" ").filter(Boolean);
+          const labelHasSelectWord = labelWords.some(
+            (w) => w === "select" || lev(w, "select") <= 1
+          );
+
+          const passesFuzzySelect = queryHasSelectLike && labelHasSelectWord;
+
+          return { it, s, inc, passesFuzzySelect, labelNorm };
         })
-        .filter(({ s, inc }) => inc || s > 0.3)
+        // Keep if normal match OR fuzzy select match
+        .filter(({ s, inc, passesFuzzySelect }) => inc || s > 0.3 || passesFuzzySelect)
         .sort((a, b) => b.s - a.s || a.it.display.localeCompare(b.it.display))
         .slice(0, MAX_SUGGESTIONS)
         .map(({ it }) => it);
@@ -432,26 +457,27 @@ const AirlineOffers = () => {
 
     setNoMatches(false);
 
-    /** --- SPECIAL CASE 1: "select credit card" → cards with this phrase on top --- */
-    const PRIORITY_SELECT = "select credit card";
-    if (qLower.includes(PRIORITY_SELECT)) {
-      const reorderBySelect = (arr) => {
-        const exact = [];
-        const contains = [];
+    // 🔹 If query looks like "select"/"selct"/etc → push all Select cards to top
+    if (queryHasSelectLike) {
+      const bumpSelectCards = (arr) => {
+        const selectOnTop = [];
         const rest = [];
         arr.forEach((item) => {
-          const label = item.display.toLowerCase();
-          if (label === PRIORITY_SELECT) exact.push(item);
-          else if (label.includes(PRIORITY_SELECT)) contains.push(item);
+          const norm = toNorm(item.display);
+          const words = norm.split(" ").filter(Boolean);
+          const hasSelectWord = words.some(
+            (w) => w === "select" || lev(w, "select") <= 1
+          );
+          if (hasSelectWord) selectOnTop.push(item);
           else rest.push(item);
         });
-        return [...exact, ...contains, ...rest];
+        return [...selectOnTop, ...rest];
       };
-      cc = reorderBySelect(cc);
-      dc = reorderBySelect(dc);
+      cc = bumpSelectCards(cc);
+      dc = bumpSelectCards(dc);
     }
 
-    /** --- SPECIAL CASE 2: query mentions dc / debit / debit card → debit first --- */
+    /** --- SPECIAL CASE: query mentions dc / debit / debit card → debit first --- */
     const mentionsDebit =
       qLower.includes("debit card") ||
       qLower.includes("debit") ||
@@ -531,9 +557,21 @@ const AirlineOffers = () => {
 
   // Collect then global-dedup by priority
   const wPermanent = matchesFor(permanentOffers, "permanent", "Permanent");
-  const wAirline = matchesFor(airlineOffers, selected?.type === "debit" ? "debit" : "credit", "Airline");
-  const wGoibibo = matchesFor(goibiboOffers, selected?.type === "debit" ? "debit" : "credit", "Goibibo");
-  const wEase = matchesFor(easeOffers, selected?.type === "debit" ? "debit" : "credit", "EaseMyTrip");
+  const wAirline = matchesFor(
+    airlineOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "Airline"
+  );
+  const wGoibibo = matchesFor(
+    goibiboOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "Goibibo"
+  );
+  const wEase = matchesFor(
+    easeOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "EaseMyTrip"
+  );
   const wYDom = matchesFor(
     yatraDomesticOffers,
     selected?.type === "debit" ? "debit" : "credit",
@@ -544,9 +582,21 @@ const AirlineOffers = () => {
     selected?.type === "debit" ? "debit" : "credit",
     "Yatra (International)"
   );
-  const wIxigo = matchesFor(ixigoOffers, selected?.type === "debit" ? "debit" : "credit", "Ixigo");
-  const wMMT = matchesFor(makeMyTripOffers, selected?.type === "debit" ? "debit" : "credit", "MakeMyTrip");
-  const wCT = matchesFor(clearTripOffers, selected?.type === "debit" ? "debit" : "credit", "ClearTrip");
+  const wIxigo = matchesFor(
+    ixigoOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "Ixigo"
+  );
+  const wMMT = matchesFor(
+    makeMyTripOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "MakeMyTrip"
+  );
+  const wCT = matchesFor(
+    clearTripOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "ClearTrip"
+  );
 
   const seen = new Set();
   const dPermanent = selected?.type === "credit" ? dedupWrappers(wPermanent, seen) : []; // permanent for credit only
