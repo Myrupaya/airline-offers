@@ -14,9 +14,17 @@ const LIST_FIELDS = {
   // Permanent (inbuilt) CSV fields
   permanentCCName: ["Credit Card Name"],
   permanentBenefit: ["Flight Benefit", "Benefit", "Offer", "Hotel Benefit"],
+  // 🔹 Coupon fields (IndiGo + others)
+  coupon: ["Coupon Code", "Coupon", "Promo Code", "Promo code", "Code"],
 };
 
 const MAX_SUGGESTIONS = 50;
+
+/** 🔴 Names (substrings) that must NEVER appear in chip strips */
+const EXCLUDED_CHIP_SUBSTRINGS = [
+  "airtel transit debit card",
+  "airtel virtual debit card",
+];
 
 /** Sites that should show the red per-card variant note */
 const VARIANT_NOTE_SITES = new Set([
@@ -48,6 +56,8 @@ const FALLBACK_IMAGE_BY_SITE = {
     "https://play-lh.googleusercontent.com/6ACvwZruB53DwP81U-vwvBob0rgMR1NxwyocN-g5Ey72k1HWbz9FmNuiMxPte4N8SQ",
   "yatra (international)":
     "https://play-lh.googleusercontent.com/6ACvwZruB53DwP81U-vwvBob0rgMR1NxwyocN-g5Ey72k1HWbz9FmNuiMxPte4N8SQ",
+  indigo:
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/IndiGo_Logo.svg/2560px-IndiGo_Logo.svg.png",
 };
 
 /** Helpers to decide usable image & resolve fallback */
@@ -201,7 +211,33 @@ function dedupWrappers(arr, seen) {
   return out;
 }
 
-/** 🔹 NEW: fuzzy detection for "select" (handles "selct", "selet", "slect", etc.) */
+/** Helper: is a cell meaningful for offer/benefit? */
+function isMeaningful(val) {
+  if (!val) return false;
+  const s = String(val).trim();
+  if (!s) return false;
+  if (/^(na|n\/a|null|undefined|-|--|none)$/i.test(s)) return false;
+  return true;
+}
+
+/** 🔹 Row-level check: does this CSV row actually have an active/real offer? */
+function rowHasOffer(row, { permanent = false } = {}) {
+  if (!row) return false;
+
+  const desc = firstField(row, LIST_FIELDS.desc);
+  const title = firstField(row, LIST_FIELDS.title);
+  const link = firstField(row, LIST_FIELDS.link);
+  const benefit = permanent ? firstField(row, LIST_FIELDS.permanentBenefit) : undefined;
+
+  if (isMeaningful(desc)) return true;
+  if (isMeaningful(title)) return true;
+  if (isMeaningful(link)) return true;
+  if (permanent && isMeaningful(benefit)) return true;
+
+  return false;
+}
+
+/** 🔹 Fuzzy detection for "select" (handles "selct", "selet", "slect", etc.) */
 function hasSelectLikeWord(text) {
   const qs = toNorm(text);
   if (!qs) return false;
@@ -214,15 +250,23 @@ function hasSelectLikeWord(text) {
   return false;
 }
 
+/** 🔹 Check if a chip name should be excluded (substring match, normalized) */
+function isExcludedChipName(name) {
+  const norm = toNorm(name);
+  if (!norm) return false;
+  return EXCLUDED_CHIP_SUBSTRINGS.some((sub) => norm.includes(sub));
+}
+
 /** Disclaimer */
 const Disclaimer = () => (
   <section className="disclaimer">
     <h3>Disclaimer</h3>
     <p>
-      All offers, coupons, and discounts listed on our platform are provided for informational purposes only.
-      We do not guarantee the accuracy, availability, or validity of any offer. Users are advised to verify the
-      terms and conditions with the respective merchants before making any purchase. We are not responsible for any
-      discrepancies, expired offers, or losses arising from the use of these coupons.
+      All offers, coupons, and discounts listed on our platform are provided for informational
+      purposes only. We do not guarantee the accuracy, availability, or validity of any offer.
+      Users are advised to verify the terms and conditions with the respective merchants before
+      making any purchase. We are not responsible for any discrepancies, expired offers, or
+      losses arising from the use of these coupons.
     </p>
   </section>
 );
@@ -254,6 +298,7 @@ const AirlineOffers = () => {
   const [clearTripOffers, setClearTripOffers] = useState([]);
   const [goibiboOffers, setGoibiboOffers] = useState([]);
   const [permanentOffers, setPermanentOffers] = useState([]);
+  const [indigoOffers, setIndigoOffers] = useState([]); // IndiGo
 
   // responsive
   useEffect(() => {
@@ -333,6 +378,7 @@ const AirlineOffers = () => {
           { name: "cleartrip.csv", setter: setClearTripOffers },
           { name: "goibibo.csv", setter: setGoibiboOffers },
           { name: "permanent.csv", setter: setPermanentOffers },
+          { name: "indigo.csv", setter: setIndigoOffers },
         ];
 
         await Promise.all(
@@ -358,21 +404,36 @@ const AirlineOffers = () => {
       for (const raw of splitList(val)) {
         const base = brandCanonicalize(getBase(raw));
         const baseNorm = toNorm(base);
-        if (baseNorm) targetMap.set(baseNorm, targetMap.get(baseNorm) || base);
+        if (!baseNorm) continue;
+
+        // 🚫 Exclude Airtel Transit / Airtel Virtual Debit Card (even with suffixes)
+        if (isExcludedChipName(base)) continue;
+
+        targetMap.set(baseNorm, targetMap.get(baseNorm) || base);
       }
     };
 
-    const harvestRows = (rows) => {
+    const harvestRows = (
+      rows,
+      { permanent = false, includeCredit = true, includeDebit = true } = {}
+    ) => {
       for (const o of rows || []) {
-        const ccField = firstField(o, LIST_FIELDS.credit);
-        if (ccField) harvestList(ccField, ccMap);
+        // ✅ Only consider rows that actually have a meaningful offer/benefit
+        if (!rowHasOffer(o, { permanent })) continue;
 
-        const dcField = firstField(o, LIST_FIELDS.debit);
-        if (dcField) harvestList(dcField, dcMap);
+        if (includeCredit) {
+          const ccField = firstField(o, LIST_FIELDS.credit);
+          if (ccField) harvestList(ccField, ccMap);
+        }
+
+        if (includeDebit) {
+          const dcField = firstField(o, LIST_FIELDS.debit);
+          if (dcField) harvestList(dcField, dcMap);
+        }
       }
     };
 
-    // Provider files
+    // Provider files → credit + debit (only rows with real offers)
     harvestRows(easeOffers);
     harvestRows(yatraDomesticOffers);
     harvestRows(yatraInternationalOffers);
@@ -381,19 +442,24 @@ const AirlineOffers = () => {
     harvestRows(makeMyTripOffers);
     harvestRows(clearTripOffers);
     harvestRows(goibiboOffers);
+    harvestRows(indigoOffers);
 
-    // Permanent credit cards (credit only)
-    for (const o of permanentOffers || []) {
-      const nm = firstField(o, LIST_FIELDS.permanentCCName);
-      if (nm) {
-        const base = brandCanonicalize(getBase(nm));
-        const baseNorm = toNorm(base);
-        if (baseNorm) ccMap.set(baseNorm, ccMap.get(baseNorm) || base);
-      }
-    }
+    // Permanent credit cards (credit only, only if permanent benefit/offer is real)
+    harvestRows(permanentOffers, {
+      permanent: true,
+      includeCredit: true,
+      includeDebit: false,
+    });
 
-    setChipCC(Array.from(ccMap.values()).sort((a, b) => a.localeCompare(b)));
-    setChipDC(Array.from(dcMap.values()).sort((a, b) => a.localeCompare(b)));
+    let creditChipList = Array.from(ccMap.values()).sort((a, b) => a.localeCompare(b));
+    let debitChipList = Array.from(dcMap.values()).sort((a, b) => a.localeCompare(b));
+
+    // Extra safety filter again on final lists
+    creditChipList = creditChipList.filter((name) => !isExcludedChipName(name));
+    debitChipList = debitChipList.filter((name) => !isExcludedChipName(name));
+
+    setChipCC(creditChipList);
+    setChipDC(debitChipList);
   }, [
     easeOffers,
     yatraDomesticOffers,
@@ -404,6 +470,7 @@ const AirlineOffers = () => {
     clearTripOffers,
     goibiboOffers,
     permanentOffers,
+    indigoOffers,
   ]);
 
   /** 🔹 search box with fuzzy "select" handling */
@@ -429,7 +496,7 @@ const AirlineOffers = () => {
           const labelNorm = toNorm(it.display);
           const inc = labelNorm.includes(qLower);
 
-          // does this card label itself contain a "select" word (Axis Select, HDFC Select Credit Card, etc.)
+          // does this card label itself contain "select" word (Axis Select, HDFC Select Credit Card, etc.)
           const labelWords = labelNorm.split(" ").filter(Boolean);
           const labelHasSelectWord = labelWords.some(
             (w) => w === "select" || lev(w, "select") <= 1
@@ -597,6 +664,11 @@ const AirlineOffers = () => {
     selected?.type === "debit" ? "debit" : "credit",
     "ClearTrip"
   );
+  const wIndiGo = matchesFor(
+    indigoOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "IndiGo"
+  );
 
   const seen = new Set();
   const dPermanent = selected?.type === "credit" ? dedupWrappers(wPermanent, seen) : []; // permanent for credit only
@@ -608,6 +680,7 @@ const AirlineOffers = () => {
   const dIxigo = dedupWrappers(wIxigo, seen);
   const dMMT = dedupWrappers(wMMT, seen);
   const dCT = dedupWrappers(wCT, seen);
+  const dIndiGo = dedupWrappers(wIndiGo, seen);
 
   const hasAny = Boolean(
     dPermanent.length ||
@@ -618,7 +691,8 @@ const AirlineOffers = () => {
       dYInt.length ||
       dIxigo.length ||
       dMMT.length ||
-      dCT.length
+      dCT.length ||
+      dIndiGo.length
   );
 
   /** Offer card UI */
@@ -628,6 +702,8 @@ const AirlineOffers = () => {
     const candidateImage = firstField(o, LIST_FIELDS.image);
     const desc = firstField(o, LIST_FIELDS.desc);
     const link = firstField(o, LIST_FIELDS.link);
+    const coupon = firstField(o, LIST_FIELDS.coupon);
+    const couponClean = coupon && String(coupon).trim();
 
     const showVariantNote =
       VARIANT_NOTE_SITES.has(wrapper.site) &&
@@ -639,6 +715,33 @@ const AirlineOffers = () => {
     // Resolve image (offer image or fallback logo)
     const siteKey = String(wrapper.site || "").toLowerCase();
     const { src: imgSrc, usingFallback } = resolveImage(siteKey, candidateImage);
+
+    const descBoxStyle = {
+      maxHeight: "140px",
+      overflowY: "auto",
+      paddingRight: "4px",
+      marginBottom: "6px",
+      lineHeight: 1.4,
+    };
+
+    const handleCopyCoupon = () => {
+      if (!couponClean) return;
+      try {
+        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(couponClean);
+        } else {
+          // fallback for older browsers
+          const textarea = document.createElement("textarea");
+          textarea.value = couponClean;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand("copy");
+          document.body.removeChild(textarea);
+        }
+      } catch (err) {
+        console.error("Failed to copy coupon code:", err);
+      }
+    };
 
     return (
       <div className="offer-card">
@@ -655,18 +758,53 @@ const AirlineOffers = () => {
 
           {isPermanent ? (
             <>
-              {permanentBenefit && <p className="offer-desc">{permanentBenefit}</p>}
+              {permanentBenefit && (
+                <div className="offer-desc" style={descBoxStyle}>
+                  {permanentBenefit}
+                </div>
+              )}
               <p className="inbuilt-note">
                 <strong>This is a inbuilt feature of this credit card</strong>
               </p>
             </>
           ) : (
-            desc && <p className="offer-desc">{desc}</p>
+            desc && (
+              <div className="offer-desc" style={descBoxStyle}>
+                {desc}
+              </div>
+            )
+          )}
+
+          {couponClean && (
+            <div
+              className="coupon-wrap"
+              style={{ marginTop: 6, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <span style={{ fontWeight: 600 }}>Coupon:</span>
+              <button
+                type="button"
+                onClick={handleCopyCoupon}
+                title="Click to copy coupon code"
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 9999,
+                  border: "1px dashed #1e7145",
+                  background: "#E8F5E9",
+                  cursor: "pointer",
+                  fontFamily: "monospace",
+                  fontSize: 14,
+                  letterSpacing: 1,
+                }}
+              >
+                {couponClean}
+              </button>
+            </div>
           )}
 
           {showVariantNote && (
             <p className="network-note">
-              <strong>Note:</strong> This benefit is applicable only on <em>{wrapper.variantText}</em> variant
+              <strong>Note:</strong> This benefit is applicable only on{" "}
+              <em>{wrapper.variantText}</em> variant
             </p>
           )}
 
@@ -710,7 +848,11 @@ const AirlineOffers = () => {
 
           {/* Credit strip */}
           {chipCC.length > 0 && (
-            <marquee direction="left" scrollAmount="4" style={{ marginBottom: 8, whiteSpace: "nowrap" }}>
+            <marquee
+              direction="left"
+              scrollAmount="4"
+              style={{ marginBottom: 8, whiteSpace: "nowrap" }}
+            >
               <strong style={{ marginRight: 10, color: "#1F2D45" }}>Credit Cards:</strong>
               {chipCC.map((name, idx) => (
                 <span
@@ -718,7 +860,9 @@ const AirlineOffers = () => {
                   role="button"
                   tabIndex={0}
                   onClick={() => handleChipClick(name, "credit")}
-                  onKeyDown={(e) => (e.key === "Enter" ? handleChipClick(name, "credit") : null)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" ? handleChipClick(name, "credit") : null
+                  }
                   style={{
                     display: "inline-block",
                     padding: "6px 10px",
@@ -752,7 +896,9 @@ const AirlineOffers = () => {
                   role="button"
                   tabIndex={0}
                   onClick={() => handleChipClick(name, "debit")}
-                  onKeyDown={(e) => (e.key === "Enter" ? handleChipClick(name, "debit") : null)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" ? handleChipClick(name, "debit") : null
+                  }
                   style={{
                     display: "inline-block",
                     padding: "6px 10px",
@@ -779,7 +925,10 @@ const AirlineOffers = () => {
       )}
 
       {/* Search / dropdown */}
-      <div className="dropdown" style={{ position: "relative", width: "600px", margin: "20px auto" }}>
+      <div
+        className="dropdown"
+        style={{ position: "relative", width: "600px", margin: "20px auto" }}
+      >
         <input
           type="text"
           value={query}
@@ -813,7 +962,10 @@ const AirlineOffers = () => {
           >
             {filteredCards.map((item, idx) =>
               item.type === "heading" ? (
-                <li key={`h-${idx}`} style={{ padding: "8px 10px", fontWeight: 700, background: "#fafafa" }}>
+                <li
+                  key={`h-${idx}`}
+                  style={{ padding: "8px 10px", fontWeight: 700, background: "#fafafa" }}
+                >
                   {item.label}
                 </li>
               ) : (
@@ -825,8 +977,12 @@ const AirlineOffers = () => {
                     cursor: "pointer",
                     borderBottom: "1px solid #f2f2f2",
                   }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = "#f7f9ff")}
-                  onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+                  onMouseOver={(e) =>
+                    (e.currentTarget.style.background = "#f7f9ff")
+                  }
+                  onMouseOut={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
                 >
                   {item.display}
                 </li>
@@ -844,7 +1000,10 @@ const AirlineOffers = () => {
 
       {/* Offers by section */}
       {selected && hasAny && !noMatches && (
-        <div className="offers-section" style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}>
+        <div
+          className="offers-section"
+          style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}
+        >
           {!!dPermanent.length && (
             <div className="offer-group">
               <h2 style={{ textAlign: "center" }}>Permanent Offers</h2>
@@ -939,6 +1098,17 @@ const AirlineOffers = () => {
               <div className="offer-grid">
                 {dCT.map((w, i) => (
                   <OfferCard key={`ct-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!!dIndiGo.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on IndiGo</h2>
+              <div className="offer-grid">
+                {dIndiGo.map((w, i) => (
+                  <OfferCard key={`indigo-${i}`} wrapper={w} />
                 ))}
               </div>
             </div>
