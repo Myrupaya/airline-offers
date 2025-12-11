@@ -58,6 +58,8 @@ const FALLBACK_IMAGE_BY_SITE = {
     "https://play-lh.googleusercontent.com/6ACvwZruB53DwP81U-vwvBob0rgMR1NxwyocN-g5Ey72k1HWbz9FmNuiMxPte4N8SQ",
   indigo:
     "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/IndiGo_Logo.svg/2560px-IndiGo_Logo.svg.png",
+  "air india":
+    "https://upload.wikimedia.org/wikipedia/en/1/1e/Air_India_Logo.svg", // fallback for Air India
 };
 
 /** Helpers to decide usable image & resolve fallback */
@@ -299,6 +301,7 @@ const AirlineOffers = () => {
   const [goibiboOffers, setGoibiboOffers] = useState([]);
   const [permanentOffers, setPermanentOffers] = useState([]);
   const [indigoOffers, setIndigoOffers] = useState([]); // IndiGo
+  const [airIndiaOffers, setAirIndiaOffers] = useState([]); // Air India
 
   // responsive
   useEffect(() => {
@@ -379,6 +382,7 @@ const AirlineOffers = () => {
           { name: "goibibo.csv", setter: setGoibiboOffers },
           { name: "permanent.csv", setter: setPermanentOffers },
           { name: "indigo.csv", setter: setIndigoOffers },
+          { name: "airindia.csv", setter: setAirIndiaOffers },
         ];
 
         await Promise.all(
@@ -443,6 +447,7 @@ const AirlineOffers = () => {
     harvestRows(clearTripOffers);
     harvestRows(goibiboOffers);
     harvestRows(indigoOffers);
+    harvestRows(airIndiaOffers);
 
     // Permanent credit cards (credit only, only if permanent benefit/offer is real)
     harvestRows(permanentOffers, {
@@ -471,6 +476,7 @@ const AirlineOffers = () => {
     goibiboOffers,
     permanentOffers,
     indigoOffers,
+    airIndiaOffers,
   ]);
 
   /** 🔹 search box with fuzzy "select" handling */
@@ -669,6 +675,11 @@ const AirlineOffers = () => {
     selected?.type === "debit" ? "debit" : "credit",
     "IndiGo"
   );
+  const wAirIndia = matchesFor(
+    airIndiaOffers,
+    selected?.type === "debit" ? "debit" : "credit",
+    "Air India"
+  );
 
   const seen = new Set();
   const dPermanent = selected?.type === "credit" ? dedupWrappers(wPermanent, seen) : []; // permanent for credit only
@@ -681,6 +692,7 @@ const AirlineOffers = () => {
   const dMMT = dedupWrappers(wMMT, seen);
   const dCT = dedupWrappers(wCT, seen);
   const dIndiGo = dedupWrappers(wIndiGo, seen);
+  const dAirIndia = dedupWrappers(wAirIndia, seen);
 
   const hasAny = Boolean(
     dPermanent.length ||
@@ -692,7 +704,8 @@ const AirlineOffers = () => {
       dIxigo.length ||
       dMMT.length ||
       dCT.length ||
-      dIndiGo.length
+      dIndiGo.length ||
+      dAirIndia.length
   );
 
   /** Offer card UI */
@@ -778,7 +791,13 @@ const AirlineOffers = () => {
           {couponClean && (
             <div
               className="coupon-wrap"
-              style={{ marginTop: 6, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}
+              style={{
+                marginTop: 6,
+                marginBottom: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
             >
               <span style={{ fontWeight: 600 }}>Coupon:</span>
               <button
@@ -1109,6 +1128,17 @@ const AirlineOffers = () => {
               <div className="offer-grid">
                 {dIndiGo.map((w, i) => (
                   <OfferCard key={`indigo-${i}`} wrapper={w} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!!dAirIndia.length && (
+            <div className="offer-group">
+              <h2 style={{ textAlign: "center" }}>Offers on Air India</h2>
+              <div className="offer-grid">
+                {dAirIndia.map((w, i) => (
+                  <OfferCard key={`airindia-${i}`} wrapper={w} />
                 ))}
               </div>
             </div>
