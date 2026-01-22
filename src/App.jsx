@@ -16,6 +16,10 @@ const LIST_FIELDS = {
   permanentBenefit: ["Flight Benefit", "Benefit", "Offer", "Hotel Benefit"],
   // 🔹 Coupon fields (IndiGo + others)
   coupon: ["Coupon Code", "Coupon", "Promo Code", "Promo code", "Code"],
+
+  // ✅ UPI / NetBanking fields
+  upi: ["UPI", "Upi", "UPI Options", "UPI Method"],
+  netbanking: ["NetBanking", "Net Banking", "Netbanking", "NetBanking Options"],
 };
 
 const MAX_SUGGESTIONS = 50;
@@ -161,7 +165,11 @@ function lev(a, b) {
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + cost
+      );
     }
   }
   return d[n][m];
@@ -173,7 +181,8 @@ function scoreCandidate(q, cand) {
   if (cs.includes(qs)) return 100;
   const qWords = qs.split(" ").filter(Boolean);
   const cWords = cs.split(" ").filter(Boolean);
-  const matchingWords = qWords.filter((qw) => cWords.some((cw) => cw.includes(qw))).length;
+  const matchingWords = qWords.filter((qw) => cWords.some((cw) => cw.includes(qw)))
+    .length;
   const sim = 1 - lev(qs, cs) / Math.max(qs.length, cs.length);
   return (matchingWords / Math.max(1, qWords.length)) * 0.7 + sim * 0.3;
 }
@@ -278,10 +287,14 @@ const AirlineOffers = () => {
   // dropdown data (from allCards.csv ONLY)
   const [creditEntries, setCreditEntries] = useState([]);
   const [debitEntries, setDebitEntries] = useState([]);
+  const [upiEntries, setUpiEntries] = useState([]);
+  const [netbankingEntries, setNetbankingEntries] = useState([]);
 
   // chip strips (from offer CSVs ONLY)
   const [chipCC, setChipCC] = useState([]);
   const [chipDC, setChipDC] = useState([]);
+  const [chipUPI, setChipUPI] = useState([]);
+  const [chipNB, setChipNB] = useState([]);
 
   // ui state
   const [filteredCards, setFilteredCards] = useState([]);
@@ -321,6 +334,8 @@ const AirlineOffers = () => {
 
         const creditMap = new Map();
         const debitMap = new Map();
+        const upiMap = new Map();
+        const nbMap = new Map();
 
         for (const row of rows) {
           const ccList = splitList(firstField(row, LIST_FIELDS.credit));
@@ -335,6 +350,20 @@ const AirlineOffers = () => {
             const baseNorm = toNorm(base);
             if (baseNorm) debitMap.set(baseNorm, debitMap.get(baseNorm) || base);
           }
+
+          // UPI / NetBanking if present in allCards.csv
+          const upiList = splitList(firstField(row, LIST_FIELDS.upi));
+          for (const raw of upiList) {
+            const base = brandCanonicalize(getBase(raw));
+            const baseNorm = toNorm(base);
+            if (baseNorm) upiMap.set(baseNorm, upiMap.get(baseNorm) || base);
+          }
+          const nbList = splitList(firstField(row, LIST_FIELDS.netbanking));
+          for (const raw of nbList) {
+            const base = brandCanonicalize(getBase(raw));
+            const baseNorm = toNorm(base);
+            if (baseNorm) nbMap.set(baseNorm, nbMap.get(baseNorm) || base);
+          }
         }
 
         const credit = Array.from(creditMap.values())
@@ -343,18 +372,30 @@ const AirlineOffers = () => {
         const debit = Array.from(debitMap.values())
           .sort((a, b) => a.localeCompare(b))
           .map((d) => makeEntry(d, "debit"));
+        const upi = Array.from(upiMap.values())
+          .sort((a, b) => a.localeCompare(b))
+          .map((d) => makeEntry(d, "upi"));
+        const netbanking = Array.from(nbMap.values())
+          .sort((a, b) => a.localeCompare(b))
+          .map((d) => makeEntry(d, "netbanking"));
 
         setCreditEntries(credit);
         setDebitEntries(debit);
+        setUpiEntries(upi);
+        setNetbankingEntries(netbanking);
 
         setFilteredCards([
           ...(credit.length ? [{ type: "heading", label: "Credit Cards" }] : []),
           ...credit,
           ...(debit.length ? [{ type: "heading", label: "Debit Cards" }] : []),
           ...debit,
+          ...(upi.length ? [{ type: "heading", label: "UPI" }] : []),
+          ...upi,
+          ...(netbanking.length ? [{ type: "heading", label: "NetBanking" }] : []),
+          ...netbanking,
         ]);
 
-        if (!credit.length && !debit.length) {
+        if (!credit.length && !debit.length && !upi.length && !netbanking.length) {
           setNoMatches(true);
           setSelected(null);
         }
@@ -399,19 +440,103 @@ const AirlineOffers = () => {
     loadOffers();
   }, []);
 
+  // ✅ NEW: Ensure dropdown has UPI / NetBanking entries even if allCards.csv doesn’t include them
+  useEffect(() => {
+    const upiMap = new Map();
+    const nbMap = new Map();
+
+    const harvest = (rows) => {
+      for (const o of rows || []) {
+        if (!rowHasOffer(o)) continue;
+
+        const upiField = firstField(o, LIST_FIELDS.upi);
+        if (upiField) {
+          for (const raw of splitList(upiField)) {
+            const base = brandCanonicalize(getBase(raw));
+            const baseNorm = toNorm(base);
+            if (baseNorm) upiMap.set(baseNorm, upiMap.get(baseNorm) || base);
+          }
+        }
+
+        const nbField = firstField(o, LIST_FIELDS.netbanking);
+        if (nbField) {
+          for (const raw of splitList(nbField)) {
+            const base = brandCanonicalize(getBase(raw));
+            const baseNorm = toNorm(base);
+            if (baseNorm) nbMap.set(baseNorm, nbMap.get(baseNorm) || base);
+          }
+        }
+      }
+    };
+
+    harvest(easeOffers);
+    harvest(yatraDomesticOffers);
+    harvest(yatraInternationalOffers);
+    harvest(ixigoOffers);
+    harvest(airlineOffers);
+    harvest(makeMyTripOffers);
+    harvest(clearTripOffers);
+    harvest(goibiboOffers);
+    harvest(indigoOffers);
+    harvest(airIndiaOffers);
+
+    const upiFromOffers = Array.from(upiMap.values())
+      .sort((a, b) => a.localeCompare(b))
+      .map((d) => makeEntry(d, "upi"));
+
+    const nbFromOffers = Array.from(nbMap.values())
+      .sort((a, b) => a.localeCompare(b))
+      .map((d) => makeEntry(d, "netbanking"));
+
+    setUpiEntries((prev) => {
+      const m = new Map();
+      (prev || []).forEach((e) => {
+        if (e && e.baseNorm) m.set(e.baseNorm, e);
+      });
+      (upiFromOffers || []).forEach((e) => {
+        if (e && e.baseNorm && !m.has(e.baseNorm)) m.set(e.baseNorm, e);
+      });
+      return Array.from(m.values()).sort((a, b) => a.display.localeCompare(b.display));
+    });
+
+    setNetbankingEntries((prev) => {
+      const m = new Map();
+      (prev || []).forEach((e) => {
+        if (e && e.baseNorm) m.set(e.baseNorm, e);
+      });
+      (nbFromOffers || []).forEach((e) => {
+        if (e && e.baseNorm && !m.has(e.baseNorm)) m.set(e.baseNorm, e);
+      });
+      return Array.from(m.values()).sort((a, b) => a.display.localeCompare(b.display));
+    });
+  }, [
+    easeOffers,
+    yatraDomesticOffers,
+    yatraInternationalOffers,
+    ixigoOffers,
+    airlineOffers,
+    makeMyTripOffers,
+    clearTripOffers,
+    goibiboOffers,
+    indigoOffers,
+    airIndiaOffers,
+  ]);
+
   /** Build chip strips from OFFER CSVs (exclude allCards.csv) */
   useEffect(() => {
     const ccMap = new Map(); // baseNorm -> display
     const dcMap = new Map();
+    const upiMap = new Map();
+    const nbMap = new Map();
 
-    const harvestList = (val, targetMap) => {
+    const harvestList = (val, targetMap, { excludeChipNames = false } = {}) => {
       for (const raw of splitList(val)) {
         const base = brandCanonicalize(getBase(raw));
         const baseNorm = toNorm(base);
         if (!baseNorm) continue;
 
         // 🚫 Exclude Airtel Transit / Airtel Virtual Debit Card (even with suffixes)
-        if (isExcludedChipName(base)) continue;
+        if (excludeChipNames && isExcludedChipName(base)) continue;
 
         targetMap.set(baseNorm, targetMap.get(baseNorm) || base);
       }
@@ -419,7 +544,13 @@ const AirlineOffers = () => {
 
     const harvestRows = (
       rows,
-      { permanent = false, includeCredit = true, includeDebit = true } = {}
+      {
+        permanent = false,
+        includeCredit = true,
+        includeDebit = true,
+        includeUPI = true,
+        includeNetBanking = true,
+      } = {}
     ) => {
       for (const o of rows || []) {
         // ✅ Only consider rows that actually have a meaningful offer/benefit
@@ -427,17 +558,27 @@ const AirlineOffers = () => {
 
         if (includeCredit) {
           const ccField = firstField(o, LIST_FIELDS.credit);
-          if (ccField) harvestList(ccField, ccMap);
+          if (ccField) harvestList(ccField, ccMap, { excludeChipNames: true });
         }
 
         if (includeDebit) {
           const dcField = firstField(o, LIST_FIELDS.debit);
-          if (dcField) harvestList(dcField, dcMap);
+          if (dcField) harvestList(dcField, dcMap, { excludeChipNames: true });
+        }
+
+        if (includeUPI) {
+          const upiField = firstField(o, LIST_FIELDS.upi);
+          if (upiField) harvestList(upiField, upiMap, { excludeChipNames: false });
+        }
+
+        if (includeNetBanking) {
+          const nbField = firstField(o, LIST_FIELDS.netbanking);
+          if (nbField) harvestList(nbField, nbMap, { excludeChipNames: false });
         }
       }
     };
 
-    // Provider files → credit + debit (only rows with real offers)
+    // Provider files → credit + debit + UPI + NetBanking (only rows with real offers)
     harvestRows(easeOffers);
     harvestRows(yatraDomesticOffers);
     harvestRows(yatraInternationalOffers);
@@ -454,10 +595,14 @@ const AirlineOffers = () => {
       permanent: true,
       includeCredit: true,
       includeDebit: false,
+      includeUPI: false,
+      includeNetBanking: false,
     });
 
     let creditChipList = Array.from(ccMap.values()).sort((a, b) => a.localeCompare(b));
     let debitChipList = Array.from(dcMap.values()).sort((a, b) => a.localeCompare(b));
+    let upiChipList = Array.from(upiMap.values()).sort((a, b) => a.localeCompare(b));
+    let nbChipList = Array.from(nbMap.values()).sort((a, b) => a.localeCompare(b));
 
     // Extra safety filter again on final lists
     creditChipList = creditChipList.filter((name) => !isExcludedChipName(name));
@@ -465,6 +610,8 @@ const AirlineOffers = () => {
 
     setChipCC(creditChipList);
     setChipDC(debitChipList);
+    setChipUPI(upiChipList);
+    setChipNB(nbChipList);
   }, [
     easeOffers,
     yatraDomesticOffers,
@@ -493,6 +640,7 @@ const AirlineOffers = () => {
     }
 
     const qLower = trimmed.toLowerCase();
+    const qNorm = toNorm(trimmed);
     const queryHasSelectLike = hasSelectLikeWord(trimmed);
 
     const scored = (arr) =>
@@ -500,7 +648,7 @@ const AirlineOffers = () => {
         .map((it) => {
           const s = scoreCandidate(trimmed, it.display);
           const labelNorm = toNorm(it.display);
-          const inc = labelNorm.includes(qLower);
+          const inc = labelNorm.includes(qNorm);
 
           // does this card label itself contain "select" word (Axis Select, HDFC Select Credit Card, etc.)
           const labelWords = labelNorm.split(" ").filter(Boolean);
@@ -518,10 +666,27 @@ const AirlineOffers = () => {
         .slice(0, MAX_SUGGESTIONS)
         .map(({ it }) => it);
 
-    let cc = scored(creditEntries);
-    let dc = scored(debitEntries);
+    // ✅ keyword detection for UPI / NetBanking
+    const mentionsUPI = qNorm === "upi" || /\bupi\b/i.test(trimmed);
+    const mentionsNetBanking =
+      qNorm === "netbanking" ||
+      qNorm === "net banking" ||
+      /net\s*bank/i.test(trimmed);
 
-    if (!cc.length && !dc.length) {
+    // If user types ONLY "upi" / "netbanking" -> show ALL of those entries at top
+    const upiList =
+      qNorm === "upi"
+        ? (upiEntries || []).slice(0, MAX_SUGGESTIONS)
+        : scored(upiEntries || []);
+    const nbList =
+      qNorm === "netbanking" || qNorm === "net banking"
+        ? (netbankingEntries || []).slice(0, MAX_SUGGESTIONS)
+        : scored(netbankingEntries || []);
+
+    let cc = scored(creditEntries || []);
+    let dc = scored(debitEntries || []);
+
+    if (!cc.length && !dc.length && !upiList.length && !nbList.length) {
       setNoMatches(true);
       setSelected(null);
       setFilteredCards([]);
@@ -559,22 +724,34 @@ const AirlineOffers = () => {
       qLower.endsWith(" dc") ||
       qLower === "dc";
 
+    const buildList = (order) => {
+      const out = [];
+      for (const sec of order) {
+        if (sec === "upi" && upiList.length) out.push({ type: "heading", label: "UPI" }, ...upiList);
+        if (sec === "netbanking" && nbList.length)
+          out.push({ type: "heading", label: "NetBanking" }, ...nbList);
+        if (sec === "credit" && cc.length)
+          out.push({ type: "heading", label: "Credit Cards" }, ...cc);
+        if (sec === "debit" && dc.length)
+          out.push({ type: "heading", label: "Debit Cards" }, ...dc);
+      }
+      return out;
+    };
+
+    // If query indicates NetBanking / UPI, show those sections at TOP
+    if (mentionsNetBanking) {
+      setFilteredCards(buildList(["netbanking", "upi", "credit", "debit"]));
+      return;
+    }
+    if (mentionsUPI) {
+      setFilteredCards(buildList(["upi", "netbanking", "credit", "debit"]));
+      return;
+    }
+
     if (mentionsDebit) {
-      // Debit section first, then credit
-      setFilteredCards([
-        ...(dc.length ? [{ type: "heading", label: "Debit Cards" }] : []),
-        ...dc,
-        ...(cc.length ? [{ type: "heading", label: "Credit Cards" }] : []),
-        ...cc,
-      ]);
+      setFilteredCards(buildList(["debit", "credit", "upi", "netbanking"]));
     } else {
-      // Default: Credit first, then debit
-      setFilteredCards([
-        ...(cc.length ? [{ type: "heading", label: "Credit Cards" }] : []),
-        ...cc,
-        ...(dc.length ? [{ type: "heading", label: "Debit Cards" }] : []),
-        ...dc,
-      ]);
+      setFilteredCards(buildList(["credit", "debit", "upi", "netbanking"]));
     }
   };
 
@@ -601,9 +778,14 @@ const AirlineOffers = () => {
     const out = [];
     for (const o of offers || []) {
       let list = [];
+
       if (type === "permanent") {
         const nm = firstField(o, LIST_FIELDS.permanentCCName);
         if (nm) list = [nm];
+      } else if (type === "upi") {
+        list = splitList(firstField(o, LIST_FIELDS.upi));
+      } else if (type === "netbanking") {
+        list = splitList(firstField(o, LIST_FIELDS.netbanking));
       } else if (type === "debit") {
         list = splitList(firstField(o, LIST_FIELDS.debit));
       } else {
@@ -621,65 +803,36 @@ const AirlineOffers = () => {
           break;
         }
       }
-      if (matched) {
-        out.push({ offer: o, site, variantText: matchedVariant });
-      }
+      if (matched) out.push({ offer: o, site, variantText: matchedVariant });
     }
     return out;
   }
 
+  const selectedMatchType =
+    selected?.type === "debit"
+      ? "debit"
+      : selected?.type === "upi"
+      ? "upi"
+      : selected?.type === "netbanking"
+      ? "netbanking"
+      : "credit";
+
   // Collect then global-dedup by priority
   const wPermanent = matchesFor(permanentOffers, "permanent", "Permanent");
-  const wAirline = matchesFor(
-    airlineOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "Airline"
-  );
-  const wGoibibo = matchesFor(
-    goibiboOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "Goibibo"
-  );
-  const wEase = matchesFor(
-    easeOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "EaseMyTrip"
-  );
-  const wYDom = matchesFor(
-    yatraDomesticOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "Yatra (Domestic)"
-  );
+  const wAirline = matchesFor(airlineOffers, selectedMatchType, "Airline");
+  const wGoibibo = matchesFor(goibiboOffers, selectedMatchType, "Goibibo");
+  const wEase = matchesFor(easeOffers, selectedMatchType, "EaseMyTrip");
+  const wYDom = matchesFor(yatraDomesticOffers, selectedMatchType, "Yatra (Domestic)");
   const wYInt = matchesFor(
     yatraInternationalOffers,
-    selected?.type === "debit" ? "debit" : "credit",
+    selectedMatchType,
     "Yatra (International)"
   );
-  const wIxigo = matchesFor(
-    ixigoOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "Ixigo"
-  );
-  const wMMT = matchesFor(
-    makeMyTripOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "MakeMyTrip"
-  );
-  const wCT = matchesFor(
-    clearTripOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "ClearTrip"
-  );
-  const wIndiGo = matchesFor(
-    indigoOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "IndiGo"
-  );
-  const wAirIndia = matchesFor(
-    airIndiaOffers,
-    selected?.type === "debit" ? "debit" : "credit",
-    "Air India"
-  );
+  const wIxigo = matchesFor(ixigoOffers, selectedMatchType, "Ixigo");
+  const wMMT = matchesFor(makeMyTripOffers, selectedMatchType, "MakeMyTrip");
+  const wCT = matchesFor(clearTripOffers, selectedMatchType, "ClearTrip");
+  const wIndiGo = matchesFor(indigoOffers, selectedMatchType, "IndiGo");
+  const wAirIndia = matchesFor(airIndiaOffers, selectedMatchType, "Air India");
 
   const seen = new Set();
   const dPermanent = selected?.type === "credit" ? dedupWrappers(wPermanent, seen) : []; // permanent for credit only
@@ -707,6 +860,12 @@ const AirlineOffers = () => {
       dIndiGo.length ||
       dAirIndia.length
   );
+
+  const sectionHeading = (siteLabel, defaultHeading) => {
+    if (selected?.type === "upi") return `UPI offers on ${siteLabel}`;
+    if (selected?.type === "netbanking") return `NetBanking offers on ${siteLabel}`;
+    return defaultHeading;
+  };
 
   /** Offer card UI */
   const OfferCard = ({ wrapper, isPermanent }) => {
@@ -839,7 +998,7 @@ const AirlineOffers = () => {
 
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
-      {(chipCC.length > 0 || chipDC.length > 0) && (
+      {(chipCC.length > 0 || chipDC.length > 0 || chipUPI.length > 0 || chipNB.length > 0) && (
         <div
           style={{
             maxWidth: 1200,
@@ -862,7 +1021,7 @@ const AirlineOffers = () => {
               gap: 8,
             }}
           >
-            <span>Credit And Debit Cards Which Have Offers</span>
+            <span>Credit, Debit, UPI And NetBanking Options Which Have Offers</span>
           </div>
 
           {/* Credit strip */}
@@ -907,7 +1066,7 @@ const AirlineOffers = () => {
 
           {/* Debit strip */}
           {chipDC.length > 0 && (
-            <marquee direction="left" scrollAmount="4" style={{ whiteSpace: "nowrap" }}>
+            <marquee direction="left" scrollAmount="4" style={{ marginBottom: 8, whiteSpace: "nowrap" }}>
               <strong style={{ marginRight: 10, color: "#1F2D45" }}>Debit Cards:</strong>
               {chipDC.map((name, idx) => (
                 <span
@@ -934,6 +1093,76 @@ const AirlineOffers = () => {
                   onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
                   onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
                   title="Click to select this card"
+                >
+                  {name}
+                </span>
+              ))}
+            </marquee>
+          )}
+
+          {/* UPI strip */}
+          {chipUPI.length > 0 && (
+            <marquee direction="left" scrollAmount="4" style={{ marginBottom: 8, whiteSpace: "nowrap" }}>
+              <strong style={{ marginRight: 10, color: "#1F2D45" }}>UPI:</strong>
+              {chipUPI.map((name, idx) => (
+                <span
+                  key={`upi-chip-${idx}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleChipClick(name, "upi")}
+                  onKeyDown={(e) => (e.key === "Enter" ? handleChipClick(name, "upi") : null)}
+                  style={{
+                    display: "inline-block",
+                    padding: "6px 10px",
+                    border: "1px solid #E0E6EE",
+                    borderRadius: 9999,
+                    marginRight: 8,
+                    background: "#fff",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    lineHeight: 1.2,
+                    userSelect: "none",
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
+                  onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
+                  title="Click to select this UPI option"
+                >
+                  {name}
+                </span>
+              ))}
+            </marquee>
+          )}
+
+          {/* NetBanking strip */}
+          {chipNB.length > 0 && (
+            <marquee direction="left" scrollAmount="4" style={{ whiteSpace: "nowrap" }}>
+              <strong style={{ marginRight: 10, color: "#1F2D45" }}>NetBanking:</strong>
+              {chipNB.map((name, idx) => (
+                <span
+                  key={`nb-chip-${idx}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleChipClick(name, "netbanking")}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" ? handleChipClick(name, "netbanking") : null
+                  }
+                  style={{
+                    display: "inline-block",
+                    padding: "6px 10px",
+                    border: "1px solid #E0E6EE",
+                    borderRadius: 9999,
+                    marginRight: 8,
+                    background: "#fff",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    lineHeight: 1.2,
+                    userSelect: "none",
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
+                  onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
+                  title="Click to select this NetBanking option"
                 >
                   {name}
                 </span>
@@ -996,12 +1225,8 @@ const AirlineOffers = () => {
                     cursor: "pointer",
                     borderBottom: "1px solid #f2f2f2",
                   }}
-                  onMouseOver={(e) =>
-                    (e.currentTarget.style.background = "#f7f9ff")
-                  }
-                  onMouseOut={(e) =>
-                    (e.currentTarget.style.background = "transparent")
-                  }
+                  onMouseOver={(e) => (e.currentTarget.style.background = "#f7f9ff")}
+                  onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
                 >
                   {item.display}
                 </li>
@@ -1019,10 +1244,7 @@ const AirlineOffers = () => {
 
       {/* Offers by section */}
       {selected && hasAny && !noMatches && (
-        <div
-          className="offers-section"
-          style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}
-        >
+        <div className="offers-section" style={{ maxWidth: 1200, margin: "0 auto", padding: 20 }}>
           {!!dPermanent.length && (
             <div className="offer-group">
               <h2 style={{ textAlign: "center" }}>Permanent Offers</h2>
@@ -1036,7 +1258,7 @@ const AirlineOffers = () => {
 
           {!!dAirline.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Airline Offers</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("Airline", "Airline Offers")}</h2>
               <div className="offer-grid">
                 {dAirline.map((w, i) => (
                   <OfferCard key={`air-${i}`} wrapper={w} />
@@ -1047,7 +1269,7 @@ const AirlineOffers = () => {
 
           {!!dGoibibo.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on Goibibo</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("Goibibo", "Offers on Goibibo")}</h2>
               <div className="offer-grid">
                 {dGoibibo.map((w, i) => (
                   <OfferCard key={`go-${i}`} wrapper={w} />
@@ -1058,7 +1280,7 @@ const AirlineOffers = () => {
 
           {!!dEase.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on EaseMyTrip</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("EaseMyTrip", "Offers on EaseMyTrip")}</h2>
               <div className="offer-grid">
                 {dEase.map((w, i) => (
                   <OfferCard key={`emt-${i}`} wrapper={w} />
@@ -1069,7 +1291,9 @@ const AirlineOffers = () => {
 
           {!!dYDom.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on Yatra (Domestic)</h2>
+              <h2 style={{ textAlign: "center" }}>
+                {sectionHeading("Yatra (Domestic)", "Offers on Yatra (Domestic)")}
+              </h2>
               <div className="offer-grid">
                 {dYDom.map((w, i) => (
                   <OfferCard key={`yd-${i}`} wrapper={w} />
@@ -1080,7 +1304,9 @@ const AirlineOffers = () => {
 
           {!!dYInt.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on Yatra (International)</h2>
+              <h2 style={{ textAlign: "center" }}>
+                {sectionHeading("Yatra (International)", "Offers on Yatra (International)")}
+              </h2>
               <div className="offer-grid">
                 {dYInt.map((w, i) => (
                   <OfferCard key={`yi-${i}`} wrapper={w} />
@@ -1091,7 +1317,7 @@ const AirlineOffers = () => {
 
           {!!dIxigo.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on Ixigo</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("Ixigo", "Offers on Ixigo")}</h2>
               <div className="offer-grid">
                 {dIxigo.map((w, i) => (
                   <OfferCard key={`ix-${i}`} wrapper={w} />
@@ -1102,7 +1328,9 @@ const AirlineOffers = () => {
 
           {!!dMMT.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on MakeMyTrip</h2>
+              <h2 style={{ textAlign: "center" }}>
+                {sectionHeading("MakeMyTrip", "Offers on MakeMyTrip")}
+              </h2>
               <div className="offer-grid">
                 {dMMT.map((w, i) => (
                   <OfferCard key={`mmt-${i}`} wrapper={w} />
@@ -1113,7 +1341,7 @@ const AirlineOffers = () => {
 
           {!!dCT.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on ClearTrip</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("ClearTrip", "Offers on ClearTrip")}</h2>
               <div className="offer-grid">
                 {dCT.map((w, i) => (
                   <OfferCard key={`ct-${i}`} wrapper={w} />
@@ -1124,7 +1352,7 @@ const AirlineOffers = () => {
 
           {!!dIndiGo.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on IndiGo</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("IndiGo", "Offers on IndiGo")}</h2>
               <div className="offer-grid">
                 {dIndiGo.map((w, i) => (
                   <OfferCard key={`indigo-${i}`} wrapper={w} />
@@ -1135,7 +1363,7 @@ const AirlineOffers = () => {
 
           {!!dAirIndia.length && (
             <div className="offer-group">
-              <h2 style={{ textAlign: "center" }}>Offers on Air India</h2>
+              <h2 style={{ textAlign: "center" }}>{sectionHeading("Air India", "Offers on Air India")}</h2>
               <div className="offer-grid">
                 {dAirIndia.map((w, i) => (
                   <OfferCard key={`airindia-${i}`} wrapper={w} />
