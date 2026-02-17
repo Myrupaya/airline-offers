@@ -64,6 +64,8 @@ const FALLBACK_IMAGE_BY_SITE = {
     "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/IndiGo_Logo.svg/2560px-IndiGo_Logo.svg.png",
   "air india":
     "https://upload.wikimedia.org/wikipedia/en/1/1e/Air_India_Logo.svg", // fallback for Air India
+  bookmyshow:
+    "https://upload.wikimedia.org/wikipedia/commons/7/7e/Bookmyshow-logo.png",
 };
 
 /** Helpers to decide usable image & resolve fallback */
@@ -391,7 +393,7 @@ const AirlineOffers = () => {
           ...debit,
           ...(upi.length ? [{ type: "heading", label: "UPI" }] : []),
           ...upi,
-          ...(netbanking.length ? [{ type: "heading", label: "NetBanking" }] : []),
+          ...(netbanking.length ? [{ type: "heading", label: "Net Banking" }] : []),
           ...netbanking,
         ]);
 
@@ -729,7 +731,7 @@ const AirlineOffers = () => {
       for (const sec of order) {
         if (sec === "upi" && upiList.length) out.push({ type: "heading", label: "UPI" }, ...upiList);
         if (sec === "netbanking" && nbList.length)
-          out.push({ type: "heading", label: "NetBanking" }, ...nbList);
+          out.push({ type: "heading", label: "Net Banking" }, ...nbList);
         if (sec === "credit" && cc.length)
           out.push({ type: "heading", label: "Credit Cards" }, ...cc);
         if (sec === "debit" && dc.length)
@@ -863,7 +865,7 @@ const AirlineOffers = () => {
 
   const sectionHeading = (siteLabel, defaultHeading) => {
     if (selected?.type === "upi") return `UPI offers on ${siteLabel}`;
-    if (selected?.type === "netbanking") return `NetBanking offers on ${siteLabel}`;
+    if (selected?.type === "netbanking") return `Net Banking offers on ${siteLabel}`;
     return defaultHeading;
   };
 
@@ -1021,7 +1023,7 @@ const AirlineOffers = () => {
               gap: 8,
             }}
           >
-            <span>Credit, Debit, UPI And NetBanking Options Which Have Offers</span>
+            <span>Credit, Debit, UPI & Net Banking Options Which Have Offers</span>
           </div>
 
           {/* Credit strip */}
@@ -1100,10 +1102,12 @@ const AirlineOffers = () => {
             </marquee>
           )}
 
-          {/* UPI strip */}
-          {chipUPI.length > 0 && (
-            <marquee direction="left" scrollAmount="4" style={{ marginBottom: 8, whiteSpace: "nowrap" }}>
-              <strong style={{ marginRight: 10, color: "#1F2D45" }}>UPI:</strong>
+          {/* UPI + Net Banking strip */}
+          {(chipUPI.length > 0 || chipNB.length > 0) && (
+            <marquee direction="left" scrollAmount="4" style={{ whiteSpace: "nowrap" }}>
+              <strong style={{ marginRight: 10, color: "#1F2D45" }}>
+                UPI/Net Banking:
+              </strong>
               {chipUPI.map((name, idx) => (
                 <span
                   key={`upi-chip-${idx}`}
@@ -1131,13 +1135,6 @@ const AirlineOffers = () => {
                   {name}
                 </span>
               ))}
-            </marquee>
-          )}
-
-          {/* NetBanking strip */}
-          {chipNB.length > 0 && (
-            <marquee direction="left" scrollAmount="4" style={{ whiteSpace: "nowrap" }}>
-              <strong style={{ marginRight: 10, color: "#1F2D45" }}>NetBanking:</strong>
               {chipNB.map((name, idx) => (
                 <span
                   key={`nb-chip-${idx}`}
@@ -1162,7 +1159,7 @@ const AirlineOffers = () => {
                   }}
                   onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
                   onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
-                  title="Click to select this NetBanking option"
+                  title="Click to select this Net Banking option"
                 >
                   {name}
                 </span>
