@@ -998,6 +998,70 @@ const AirlineOffers = () => {
     );
   };
 
+  const chipBaseStyle = {
+    display: "inline-block",
+    padding: "6px 10px",
+    border: "1px solid #E0E6EE",
+    borderRadius: 9999,
+    marginRight: 8,
+    background: "#fff",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+    cursor: "pointer",
+    fontSize: 14,
+    lineHeight: 1.2,
+    userSelect: "none",
+  };
+
+  const renderChip = (name, idx, type, keyPrefix, title) => (
+    <span
+      key={`${keyPrefix}-${idx}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => handleChipClick(name, type)}
+      onKeyDown={(e) => (e.key === "Enter" ? handleChipClick(name, type) : null)}
+      style={chipBaseStyle}
+      onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
+      onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
+      title={title}
+    >
+      {name}
+    </span>
+  );
+
+  const baselineChipCount = Math.max(1, chipUPI.length + chipNB.length);
+  const baselineTickerDuration = 60;
+
+  const renderChipStrip = (
+    label,
+    items,
+    type,
+    keyPrefix,
+    title,
+    extraItems = null,
+    extraItemCount = 0
+  ) => {
+    const totalChipCount = Math.max(1, items.length + extraItemCount);
+    const durationSeconds = Math.max(
+      36,
+      (baselineTickerDuration * totalChipCount) / baselineChipCount
+    );
+
+    return (
+    <div className="chip-ticker">
+      <div
+        className="chip-ticker-track"
+        style={{ animationDuration: `${durationSeconds}s` }}
+      >
+        <div className="chip-ticker-content">
+          <strong style={{ marginRight: 10, color: "#1F2D45" }}>{label}</strong>
+          {items.map((name, idx) => renderChip(name, idx, type, keyPrefix, title))}
+          {extraItems}
+        </div>
+      </div>
+    </div>
+    );
+  };
+
   return (
     <div className="App" style={{ fontFamily: "'Libre Baskerville', serif" }}>
       {(chipCC.length > 0 || chipDC.length > 0 || chipUPI.length > 0 || chipNB.length > 0) && (
@@ -1028,143 +1092,49 @@ const AirlineOffers = () => {
 
           {/* Credit strip */}
           {chipCC.length > 0 && (
-            <marquee
-              direction="left"
-              scrollAmount="4"
-              style={{ marginBottom: 8, whiteSpace: "nowrap" }}
-            >
-              <strong style={{ marginRight: 10, color: "#1F2D45" }}>Credit Cards:</strong>
-              {chipCC.map((name, idx) => (
-                <span
-                  key={`cc-chip-${idx}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleChipClick(name, "credit")}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" ? handleChipClick(name, "credit") : null
-                  }
-                  style={{
-                    display: "inline-block",
-                    padding: "6px 10px",
-                    border: "1px solid #E0E6EE",
-                    borderRadius: 9999,
-                    marginRight: 8,
-                    background: "#fff",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                    cursor: "pointer",
-                    fontSize: 14,
-                    lineHeight: 1.2,
-                    userSelect: "none",
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
-                  onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
-                  title="Click to select this card"
-                >
-                  {name}
-                </span>
-              ))}
-            </marquee>
+            <div style={{ marginBottom: 8 }}>
+              {renderChipStrip(
+                "Credit Cards:",
+                chipCC,
+                "credit",
+                "cc-chip",
+                "Click to select this card"
+              )}
+            </div>
           )}
 
           {/* Debit strip */}
           {chipDC.length > 0 && (
-            <marquee direction="left" scrollAmount="4" style={{ marginBottom: 8, whiteSpace: "nowrap" }}>
-              <strong style={{ marginRight: 10, color: "#1F2D45" }}>Debit Cards:</strong>
-              {chipDC.map((name, idx) => (
-                <span
-                  key={`dc-chip-${idx}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleChipClick(name, "debit")}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" ? handleChipClick(name, "debit") : null
-                  }
-                  style={{
-                    display: "inline-block",
-                    padding: "6px 10px",
-                    border: "1px solid #E0E6EE",
-                    borderRadius: 9999,
-                    marginRight: 8,
-                    background: "#fff",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                    cursor: "pointer",
-                    fontSize: 14,
-                    lineHeight: 1.2,
-                    userSelect: "none",
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
-                  onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
-                  title="Click to select this card"
-                >
-                  {name}
-                </span>
-              ))}
-            </marquee>
+            <div style={{ marginBottom: 8 }}>
+              {renderChipStrip(
+                "Debit Cards:",
+                chipDC,
+                "debit",
+                "dc-chip",
+                "Click to select this card"
+              )}
+            </div>
           )}
 
           {/* UPI + Net Banking strip */}
           {(chipUPI.length > 0 || chipNB.length > 0) && (
-            <marquee direction="left" scrollAmount="4" style={{ whiteSpace: "nowrap" }}>
-              <strong style={{ marginRight: 10, color: "#1F2D45" }}>
-                UPI/Net Banking:
-              </strong>
-              {chipUPI.map((name, idx) => (
-                <span
-                  key={`upi-chip-${idx}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleChipClick(name, "upi")}
-                  onKeyDown={(e) => (e.key === "Enter" ? handleChipClick(name, "upi") : null)}
-                  style={{
-                    display: "inline-block",
-                    padding: "6px 10px",
-                    border: "1px solid #E0E6EE",
-                    borderRadius: 9999,
-                    marginRight: 8,
-                    background: "#fff",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                    cursor: "pointer",
-                    fontSize: 14,
-                    lineHeight: 1.2,
-                    userSelect: "none",
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
-                  onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
-                  title="Click to select this UPI option"
-                >
-                  {name}
-                </span>
-              ))}
-              {chipNB.map((name, idx) => (
-                <span
-                  key={`nb-chip-${idx}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleChipClick(name, "netbanking")}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" ? handleChipClick(name, "netbanking") : null
-                  }
-                  style={{
-                    display: "inline-block",
-                    padding: "6px 10px",
-                    border: "1px solid #E0E6EE",
-                    borderRadius: 9999,
-                    marginRight: 8,
-                    background: "#fff",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                    cursor: "pointer",
-                    fontSize: 14,
-                    lineHeight: 1.2,
-                    userSelect: "none",
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = "#F0F5FF")}
-                  onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
-                  title="Click to select this Net Banking option"
-                >
-                  {name}
-                </span>
-              ))}
-            </marquee>
+            renderChipStrip(
+              "UPI/Net Banking:",
+              chipUPI,
+              "upi",
+              "upi-chip",
+              "Click to select this UPI option",
+              chipNB.map((name, idx) =>
+                renderChip(
+                  name,
+                  idx,
+                  "netbanking",
+                  "nb-chip",
+                  "Click to select this Net Banking option"
+                )
+              ),
+              chipNB.length
+            )
           )}
         </div>
       )}
